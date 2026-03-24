@@ -52,6 +52,18 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 - [ ] 3.3 Cloudflare DNS
 - [ ] 3.4 Final end-to-end test
 
+### Future: Automatic VPN Rotation
+- [ ] 4.1 Integrate Gluetun control server API (localhost:8000) for programmatic VPN rotation
+  - On 3 consecutive download timeouts → stop VPN via API → auto-heal reconnects to new server → verify new IP → resume
+  - Replaces current manual VPN restart workflow
+  - Gluetun API: `PUT /v1/vpn/status {"status":"stopped"}` triggers auto-heal to random server
+  - `GET /v1/publicip/ip` to verify new IP after reconnect
+  - MRI container reaches API at localhost:8000 (shared network stack)
+  - Requires: enable Gluetun HTTP_CONTROL_SERVER_AUTH env var
+- [ ] 4.2 **IMPORTANT: Test geo-restriction** — verify that non-EU VPN exit countries are NOT rejected by MRI portal (mri.cts-mrp.eu). If so, must configure SERVER_COUNTRIES in Gluetun to EU-only pool
+- [ ] 4.3 Patch process_molecule_v10.js: replace exit-on-block (code 3) with rotate-and-retry loop
+- [ ] 4.4 End-to-end test: full molecule download with automatic rotation
+
 ## Test Results
 _(will be populated as tests are run)_
 
@@ -75,3 +87,11 @@ _(will be populated as tests are run)_
 - Gluetun: added port 8502:8502
 - Master compose: added mri.yml include
 - Created /home/clindevdep/docker/appdata/mri/ for persistent data
+
+{clindevdep-T470; Claude; 2026-03-24_0800} VPN rotation research
+- Gluetun has control server API on port 8000 (accessible from MRI container at localhost:8000)
+- Can trigger server rotation: stop VPN → auto-heal reconnects to different random server
+- No direct "switch to country X" API — picks randomly from SERVER_COUNTRIES/SERVER_CITIES pool
+- **Geo-restriction concern:** MRI portal (mri.cts-mrp.eu) may reject non-EU exit IPs — must test before configuring server pool
+- Planned for future update (Stage 4) — currently exit-on-block behavior preserved
+- User will continue from different computer for docker build/test

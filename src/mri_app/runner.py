@@ -105,7 +105,7 @@ def list_runs() -> list[dict]:
     runs = []
     seen = set()
 
-    from .config import DATA_DIR, WORKSPACE_ROOT
+    from .config import DATA_DIR
 
     # Scan all candidate directories
     search_dirs = []
@@ -116,11 +116,6 @@ def list_runs() -> list[dict]:
             d for d in DATA_DIR.iterdir()
             if d.is_dir() and d.name not in ("runs", "uploads")
         )
-    # Also scan workspace for project folders with run_config.json
-    if WORKSPACE_ROOT.exists():
-        for d in WORKSPACE_ROOT.rglob("run_config.json"):
-            if d.parent not in search_dirs:
-                search_dirs.append(d.parent)
 
     for run_dir in search_dirs:
         if run_dir in seen:

@@ -30,11 +30,11 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 
 ### Stage 1: Backend (Docker + Pipeline)
 - [x] 1.1 Project scaffolding, git init, GitHub repo
-- [ ] 1.2 package.json + pyproject.toml
-- [ ] 1.3 Copy & patch JS scripts from MRI_Oct2025
-- [ ] 1.4 Dockerfile (multi-runtime)
-- [ ] 1.5 orchestrator.py (Python replacement for RUN.sh)
-- [ ] 1.6 Docker Compose + Gluetun routing
+- [x] 1.2 package.json + pyproject.toml
+- [x] 1.3 Copy & patch JS scripts from MRI_Oct2025
+- [x] 1.4 Dockerfile (multi-runtime)
+- [x] 1.5 orchestrator.py (Python replacement for RUN.sh)
+- [x] 1.6 Docker Compose + Gluetun routing
 - [ ] 1.7 Build & test backend container
 
 ### Stage 2: WebUI (Streamlit)
@@ -63,3 +63,15 @@ _(will be populated as tests are run)_
 - Source: MRI_Jan2026 CLI tool (RUN.sh orchestrating Node.js + Python scripts)
 - Plan: Backend first → WebUI → Hub integration
 - All traffic through Gluetun VPN container
+
+{clindevdep-T470; Claude; 2026-03-24_0730} Backend scaffolding complete
+- package.json (Node.js ESM: playwright, stealth plugins, exceljs, dotenv, zod)
+- pyproject.toml (Python: streamlit, pandas, openpyxl, pypdf, lxml, pdfplumber)
+- Copied 6 scripts from MRI_Oct2025 into scripts/
+- Patched: removed hardcoded dotenv paths, added --single-process Chromium flag
+- Dockerfile: node:22-bookworm-slim + Python 3.12 + uv + Playwright Chromium
+- orchestrator.py: Python replacement for RUN.sh (3-step pipeline with status.json)
+- Docker Compose: mri.yml with network_mode: "service:gluetun"
+- Gluetun: added port 8502:8502
+- Master compose: added mri.yml include
+- Created /home/clindevdep/docker/appdata/mri/ for persistent data

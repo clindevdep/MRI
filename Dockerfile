@@ -33,10 +33,12 @@ RUN uv venv /app/.venv && \
 # Copy application code
 COPY scripts/ ./scripts/
 COPY src/ ./src/
+COPY .streamlit/ ./.streamlit/
 
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
 ENV NODE_ENV=production
+ENV PYTHONPATH=/app/src
 
 # Health check endpoint
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
@@ -44,5 +46,4 @@ HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
 
 EXPOSE 8502
 
-# Initial CMD — will be updated to Streamlit in Stage 2
-CMD ["python3", "-c", "import http.server; s=http.server.HTTPServer(('0.0.0.0',8502),http.server.SimpleHTTPRequestHandler); print('MRI backend ready on :8502'); s.serve_forever()"]
+CMD ["streamlit", "run", "/app/src/mri_app/app.py", "--server.port=8502", "--server.address=0.0.0.0"]

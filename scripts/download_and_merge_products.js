@@ -54,8 +54,8 @@ function getRandomViewport() {
   return VIEWPORTS[Math.floor(Math.random() * VIEWPORTS.length)];
 }
 
-// Proxy configuration
-const ENABLE_PROXY = process.env.ENABLE_PROXY !== 'false'; // Default: enabled
+// Proxy configuration (disabled by default — VPN provides IP rotation)
+const ENABLE_PROXY = process.env.ENABLE_PROXY === 'true';
 const PROXY_CONFIG = ENABLE_PROXY && process.env.PROXYSCRAPE_HOSTNAME ? {
   server: `http://${process.env.PROXYSCRAPE_HOSTNAME}:${process.env.PROXYSCRAPE_PORT}`,
   username: process.env.PROXYSCRAPE_USERNAME,

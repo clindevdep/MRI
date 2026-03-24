@@ -18,7 +18,7 @@ config();
 const MOLECULE = process.argv[2] || 'apixaban';
 const MAX_RESULTS = parseInt(process.argv[3]) || 30;
 
-// Proxy configuration (optional - uses VPN by default)
+// Proxy configuration (disabled by default — VPN provides IP rotation)
 const ENABLE_PROXY = process.env.ENABLE_PROXY === 'true';
 const PROXY_CONFIG = ENABLE_PROXY && process.env.PROXYSCRAPE_HOSTNAME ? {
   server: `http://${process.env.PROXYSCRAPE_HOSTNAME}:${process.env.PROXYSCRAPE_PORT}`,
@@ -522,13 +522,11 @@ async function searchMolecule(page, moleculeName) {
 async function main() {
   console.log('🛡️  Advanced Stealth Mode - MRI Portal Scraper v14');
   console.log('━'.repeat(60));
-  console.log('🔒 VPN Status: Connected via Surfshark');
-  console.log(`📍 Exit IP: 217.138.216.70`);
 
   if (PROXY_CONFIG) {
-    console.log(`🌐 Additional Proxy: ${PROXY_CONFIG.server}`);
+    console.log(`🌐 Proxy: ${PROXY_CONFIG.server}`);
   } else {
-    console.log(`🌐 Using VPN connection (no additional proxy)`);
+    console.log(`🌐 Using direct/VPN connection`);
   }
 
   console.log('━'.repeat(60));
@@ -577,14 +575,12 @@ async function main() {
         console.log(`   First result: ${products[0].product_name}\n`);
       }
 
-      const outputDir = join(process.cwd(), 'outputs', MOLECULE.toLowerCase());
-      mkdirSync(outputDir, { recursive: true });
-
-      const outputFile = join(outputDir, 'search_results.json');
+      // Save to current working directory (run_dir)
+      const outputFile = join(process.cwd(), 'search_results.json');
       writeFileSync(outputFile, JSON.stringify(products, null, 2));
       console.log(`💾 Saved: ${outputFile}`);
 
-      const listFile = join(outputDir, 'product_list.txt');
+      const listFile = join(process.cwd(), 'product_list.txt');
       const list = products.map((p, i) =>
         `${i + 1}. ${p.product_name} - ${p.procedure_code}`
       ).join('\n');

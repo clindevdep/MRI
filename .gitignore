@@ -9,3 +9,4 @@ build/
 .streamlit/secrets.toml
 data/
 *.log
+MRI_v06_byAider/

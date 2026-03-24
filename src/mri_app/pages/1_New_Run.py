@@ -4,55 +4,49 @@ import re
 from pathlib import Path
 
 import streamlit as st
-from mri_app.config import DATA_DIR
+from mri_app.config import WORKSPACE_ROOT
 from mri_app.runner import start_pipeline
 
 st.set_page_config(page_title="New Run — MRI", page_icon="🔍", layout="wide")
 st.title("New Run")
 
 
-# ── Project folder detection helpers ──────────────────────────────────────
+# ── Folder browser helpers ────────────────────────────────────────────────
 
-def list_project_folders() -> list[Path]:
-    """List subdirectories under /data that can serve as project folders."""
-    if not DATA_DIR.exists():
+def list_subfolders(parent: Path) -> list[Path]:
+    """List visible subdirectories of a path."""
+    if not parent.is_dir():
         return []
-    folders = sorted(
-        [d for d in DATA_DIR.iterdir() if d.is_dir() and d.name not in ("runs", "uploads")],
-        key=lambda d: d.stat().st_mtime,
-        reverse=True,
-    )
-    return folders
+    try:
+        return sorted(
+            [d for d in parent.iterdir() if d.is_dir() and not d.name.startswith(".")],
+            key=lambda d: d.name.lower(),
+        )
+    except PermissionError:
+        return []
 
 
 def detect_project_type(folder: Path) -> tuple[str, Path | None, str]:
-    """
-    Auto-detect source mode from folder contents.
-    Returns (mode, xlsx_path, reason).
-    """
+    """Auto-detect source mode from folder contents."""
     xlsx_files = sorted(folder.glob("*.xlsx"))
 
     if not xlsx_files:
         return "automatic", None, "No .xlsx files found — will search MRI portal"
 
-    # Check for basic export (filename contains 'export')
     for f in xlsx_files:
         if "export" in f.stem.lower():
-            return "basic", f, f"Found basic MRI export: {f.name}"
+            return "basic", f, f"Found basic MRI export: **{f.name}**"
 
-    # Check for script-generated full database
     for f in xlsx_files:
         if "_core_database" in f.stem.lower() or "_database" in f.stem.lower():
-            return "full", f, f"Found full database: {f.name}"
+            return "full", f, f"Found full database: **{f.name}**"
 
-    # Has xlsx but doesn't match patterns — default to basic
-    return "basic", xlsx_files[0], f"Found .xlsx file: {xlsx_files[0].name} (assuming basic export)"
+    return "basic", xlsx_files[0], f"Found .xlsx file: **{xlsx_files[0].name}** (assuming basic export)"
 
 
 def derive_molecule(folder: Path) -> str:
     """Derive molecule label from folder name."""
     name = folder.name.lower()
-    # Strip common suffixes and timestamps
     name = re.sub(r"_\d{8}_?\d{0,6}$", "", name)
     for suffix in ("_core_database", "_database", "_export", "_manual_mri"):
         name = name.replace(suffix, "")
@@ -63,20 +57,72 @@ def derive_molecule(folder: Path) -> str:
 # ── Step 1: Select project folder ─────────────────────────────────────────
 
 st.markdown("### **Select project folder**")
+st.caption(f"Browsing host filesystem (mounted at `{WORKSPACE_ROOT}`)")
 
-existing_folders = list_project_folders()
+# Initialize session state for current browse path
+if "browse_path" not in st.session_state:
+    st.session_state.browse_path = str(WORKSPACE_ROOT)
 
-if not existing_folders:
-    st.warning(f"No project folders found under `{DATA_DIR}`. Create a folder with your .xlsx files and restart.")
+# Path input — user can type or paste any path
+browse_path = st.text_input(
+    "Folder path",
+    value=st.session_state.browse_path,
+    help="Type a path or use the browser below to navigate",
+)
+current = Path(browse_path)
+
+if not current.exists():
+    st.error(f"Path does not exist: `{current}`")
     st.stop()
 
-selected_name = st.selectbox(
-    "Project folder",
-    options=[f.name for f in existing_folders],
-    index=0,
-    help=f"Folders under {DATA_DIR}",
-)
-project_dir = DATA_DIR / selected_name
+if not current.is_dir():
+    st.error(f"Not a directory: `{current}`")
+    st.stop()
+
+# Folder browser — show subfolders as clickable buttons
+subfolders = list_subfolders(current)
+
+if subfolders or current != WORKSPACE_ROOT:
+    with st.container(border=True):
+        # Parent navigation
+        if current != Path("/"):
+            if st.button(f".. (up to {current.parent.name or '/'})", key="nav_parent"):
+                st.session_state.browse_path = str(current.parent)
+                st.rerun()
+
+        # Subfolder navigation
+        cols_per_row = 4
+        for i in range(0, len(subfolders), cols_per_row):
+            cols = st.columns(cols_per_row)
+            for j, col in enumerate(cols):
+                idx = i + j
+                if idx < len(subfolders):
+                    folder = subfolders[idx]
+                    if col.button(f"📁 {folder.name}", key=f"nav_{folder}", use_container_width=True):
+                        st.session_state.browse_path = str(folder)
+                        st.rerun()
+
+# Select current folder as project
+st.markdown(f"**Selected:** `{current}`")
+
+# Show folder contents summary
+xlsx_files = sorted(current.glob("*.xlsx"))
+pdf_count = len(list(current.rglob("*.pdf")))
+json_files = sorted(current.glob("*.json"))
+
+content_parts = []
+if xlsx_files:
+    content_parts.append(f"{len(xlsx_files)} .xlsx")
+if pdf_count:
+    content_parts.append(f"{pdf_count} .pdf")
+if json_files:
+    content_parts.append(f"{len(json_files)} .json")
+if content_parts:
+    st.caption(f"Contents: {', '.join(content_parts)}")
+else:
+    st.caption("Folder is empty")
+
+project_dir = current
 
 st.divider()
 
@@ -85,10 +131,8 @@ st.divider()
 detected_mode, detected_file, detection_reason = detect_project_type(project_dir)
 auto_molecule = derive_molecule(project_dir)
 
-# Show detected xlsx files
-xlsx_files = sorted(project_dir.glob("*.xlsx"))
 if xlsx_files:
-    with st.expander(f"Files in `{project_dir.name}/`  ({len(xlsx_files)} .xlsx)", expanded=False):
+    with st.expander(f"Excel files in folder ({len(xlsx_files)})", expanded=False):
         for f in xlsx_files:
             st.text(f"  {f.name}  ({f.stat().st_size / 1024:.0f} KB)")
 
@@ -126,7 +170,7 @@ if mode == "basic":
         chosen = st.selectbox("Select basic export file", options=[f.name for f in xlsx_files])
         source_file = project_dir / chosen
     else:
-        st.warning("No .xlsx file in project folder. Upload one or switch to Automatic mode.")
+        st.warning("No .xlsx file in project folder. Switch to Automatic mode.")
 
     molecule = st.text_input("Molecule label", value=auto_molecule, placeholder="e.g. ketoprofen")
     max_products = st.number_input("Max products", min_value=1, value=10000, step=100)
@@ -143,7 +187,7 @@ elif mode == "full":
         chosen = st.selectbox("Select full database file", options=[f.name for f in xlsx_files])
         source_file = project_dir / chosen
     else:
-        st.warning("No .xlsx file in project folder. Upload one or switch to Automatic mode.")
+        st.warning("No .xlsx file in project folder. Switch to Automatic mode.")
 
     molecule = st.text_input("Molecule label", value=auto_molecule, placeholder="e.g. ketoprofen")
     max_products = st.number_input("Max products", min_value=1, value=10000, step=100)

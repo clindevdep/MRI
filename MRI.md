@@ -149,3 +149,18 @@ _(will be populated as tests are run)_
 - app.py: home page with quick status metrics
 - Updated Dockerfile: CMD → streamlit run, PYTHONPATH, .streamlit/ copy
 - Docker build + health check verified (HTTP 200 on / and /_stcore/health)
+
+
+### 2026-03-28
+{vmi1967850; Codex; 2026-03-28_1735} Live run v012_Apix investigated after tracker count mismatch
+- Verified successful completion of run v012_Apix_20260328_153108
+- Observed count mismatch: core tracker reported 245 products, while PAR tracker reported 227 products
+- Confirmed search_results.json and core_download_tracker.json both contained 245 procedure codes
+- Confirmed merge step logged Successfully downloaded: 245 files and Merged 227 files into 227 total rows
+- Confirmed PAR stage reads products from the merged core database file v012_Apix_core_database.xlsx, not from the original 245-item search result list
+- Identified exact gap: 18 procedure codes were present in core_download_tracker.json but absent from the merged core database and therefore absent from download_tracker.json
+- Confirmed all 18 missing items had downloaded files in core_downloads, but those files were HTML payloads saved with .xlsx extensions rather than valid Excel workbooks
+- Merge log showed Excel file format cannot be determined for those 18 files, so they were excluded from the merged core database
+- Conclusion: core stage currently counts fallback-downloaded HTML-as-.xlsx files as successful downloads, while PAR stage only sees rows that survive Excel merge and parsing
+- Impact on v012_Apix: 245 core download successes, 227 mergeable core database rows, 227 PAR-stage products, 0 PAR tracker failures
+- Follow-up candidate: tighten core downloader validation so fallback outputs are verified as real Excel files before being marked completed, or log them as invalid core artifacts explicitly

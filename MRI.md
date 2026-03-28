@@ -175,3 +175,10 @@ _(will be populated as tests are run)_
 - Verified archive generation against completed run v012_Apix_20260328_153108
 - Hot-patched the live mri container by copying the updated UI files into /app/src/mri_app and keeping the health check green
 - Created and verified example archives under /data/archives, including v012_Apix_output_live_check.zip (~51 MB)
+
+
+{vmi1967850; Codex; 2026-03-28_1752} Results page simplified to a single bundle download
+- Simplified the Results page UX from multiple zip archive buttons to one primary Download All Results (.zip) button
+- The single button now packages the full run directory as one archive so users do not need to choose between output folder, PAR collection, or run bundle variants
+- Kept preview sections for bioequivalence data, PAR listings, database preview, and run report, but removed secondary archive choices to reduce confusion
+- Hot-patched the live mri container with the simplified Results page and kept the Streamlit health check green

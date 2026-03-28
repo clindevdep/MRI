@@ -35,30 +35,22 @@ st.divider()
 with st.expander("Run Configuration", expanded=False):
     st.json(config)
 
-st.subheader("Run Downloads")
-archive_specs = []
-if molecule_dir.exists():
-    archive_specs.append(("Output Folder (.zip)", molecule_dir, f"{run_dir.name}_{molecule}_output"))
-if collection.exists():
-    archive_specs.append(("PAR Collection (.zip)", collection, f"{run_dir.name}_{molecule}_par_collection"))
-archive_specs.append(("Full Run Bundle (.zip)", run_dir, f"{run_dir.name}_bundle"))
-
-archive_columns = st.columns(len(archive_specs))
-for col, (label, target, archive_name) in zip(archive_columns, archive_specs):
-    with col:
-        try:
-            with st.spinner(f"Preparing {label.lower()}..."):
-                archive_path = ensure_directory_zip(target, archive_name)
-            col.download_button(
-                label,
-                data=archive_path.read_bytes(),
-                file_name=archive_path.name,
-                mime="application/zip",
-                key=f"archive:{archive_name}",
-                use_container_width=True,
-            )
-        except Exception as exc:
-            col.caption(f"{label} unavailable: {exc}")
+st.subheader("Download")
+st.caption("Use a single zip archive to download the full result bundle for this run.")
+try:
+    with st.spinner("Preparing full run bundle..."):
+        archive_path = ensure_directory_zip(run_dir, f"{run_dir.name}_bundle")
+    st.download_button(
+        "Download All Results (.zip)",
+        data=archive_path.read_bytes(),
+        file_name=archive_path.name,
+        mime="application/zip",
+        key=f"archive:{run_dir.name}",
+        use_container_width=True,
+        type="primary",
+    )
+except Exception as exc:
+    st.error(f"Bundle unavailable: {exc}")
 
 st.divider()
 
@@ -67,13 +59,6 @@ if be_csv.exists():
     st.subheader("Bioequivalence Data")
     df = pd.read_csv(be_csv)
     st.dataframe(df, use_container_width=True)
-
-    st.download_button(
-        "Download CSV",
-        data=be_csv.read_bytes(),
-        file_name=be_csv.name,
-        mime="text/csv",
-    )
 else:
     st.caption("No bioequivalence CSV found for this run.")
 
@@ -84,18 +69,9 @@ if molecule_dir.exists():
     pdfs = sorted(molecule_dir.rglob("*.pdf"))
     if pdfs:
         st.markdown(f"**{len(pdfs)} PDF(s)** found")
-
         for pdf in pdfs:
             rel = pdf.relative_to(molecule_dir)
-            col1, col2 = st.columns([3, 1])
-            col1.markdown(f"`{rel}`")
-            col2.download_button(
-                "Download",
-                data=pdf.read_bytes(),
-                file_name=pdf.name,
-                mime="application/pdf",
-                key=str(pdf),
-            )
+            st.markdown(f"`{rel}`")
     else:
         st.caption("No PDFs found.")
 else:
@@ -112,12 +88,6 @@ st.divider()
 st.subheader("Database")
 db_path = run_dir / f"{molecule}_database.xlsx"
 if db_path.exists():
-    st.download_button(
-        "Download Database (.xlsx)",
-        data=db_path.read_bytes(),
-        file_name=db_path.name,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
     try:
         db_df = pd.read_excel(db_path)
         st.dataframe(db_df.head(20), use_container_width=True)

@@ -164,3 +164,14 @@ _(will be populated as tests are run)_
 - Conclusion: core stage currently counts fallback-downloaded HTML-as-.xlsx files as successful downloads, while PAR stage only sees rows that survive Excel merge and parsing
 - Impact on v012_Apix: 245 core download successes, 227 mergeable core database rows, 227 PAR-stage products, 0 PAR tracker failures
 - Follow-up candidate: tighten core downloader validation so fallback outputs are verified as real Excel files before being marked completed, or log them as invalid core artifacts explicitly
+
+
+{vmi1967850; Codex; 2026-03-28_1745} Results page extended with zip downloads; WebUI lifecycle clarified
+- Re-checked project log: original Stage 2 WebUI intent was a persistent dashboard with results browsing and downloads, not a one-shot job UI that exits after a run
+- Confirmed live container behavior matches that design: the Streamlit WebUI stays up as the long-running service, while pipeline runs execute as background subprocesses and finish independently
+- Added cached zip archive support for completed runs via new mri_app/downloads.py helper
+- Added Results page download buttons for Output Folder (.zip), PAR Collection (.zip), and Full Run Bundle (.zip)
+- Added configurable MRI_DATA_DIR path handling in config.py so archive generation can be exercised against the host data volume outside the container when needed
+- Verified archive generation against completed run v012_Apix_20260328_153108
+- Hot-patched the live mri container by copying the updated UI files into /app/src/mri_app and keeping the health check green
+- Created and verified example archives under /data/archives, including v012_Apix_output_live_check.zip (~51 MB)

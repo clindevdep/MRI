@@ -1,8 +1,11 @@
 """Results — browse completed runs, PARs, and bioequivalence data."""
 
-import streamlit as st
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+from mri_app.downloads import ensure_directory_zip
 from mri_app.runner import list_runs
 
 st.set_page_config(page_title="Results — MRI", page_icon="📋", layout="wide")
@@ -16,7 +19,6 @@ if not completed:
     st.page_link("pages/1_New_Run.py", label="Start New Run", icon="🔍")
     st.stop()
 
-# Select run
 selected_name = st.selectbox(
     "Select completed run",
     options=[r["name"] for r in completed],
@@ -25,14 +27,41 @@ selected = next(r for r in completed if r["name"] == selected_name)
 run_dir: Path = selected["path"]
 config = selected.get("config", {})
 molecule = config.get("molecule", "unknown")
+molecule_dir = run_dir / molecule
+collection = run_dir / f"{molecule}_PAR_collection"
 
 st.divider()
 
-# Run info
 with st.expander("Run Configuration", expanded=False):
     st.json(config)
 
-# Bioequivalence CSV
+st.subheader("Run Downloads")
+archive_specs = []
+if molecule_dir.exists():
+    archive_specs.append(("Output Folder (.zip)", molecule_dir, f"{run_dir.name}_{molecule}_output"))
+if collection.exists():
+    archive_specs.append(("PAR Collection (.zip)", collection, f"{run_dir.name}_{molecule}_par_collection"))
+archive_specs.append(("Full Run Bundle (.zip)", run_dir, f"{run_dir.name}_bundle"))
+
+archive_columns = st.columns(len(archive_specs))
+for col, (label, target, archive_name) in zip(archive_columns, archive_specs):
+    with col:
+        try:
+            with st.spinner(f"Preparing {label.lower()}..."):
+                archive_path = ensure_directory_zip(target, archive_name)
+            col.download_button(
+                label,
+                data=archive_path.read_bytes(),
+                file_name=archive_path.name,
+                mime="application/zip",
+                key=f"archive:{archive_name}",
+                use_container_width=True,
+            )
+        except Exception as exc:
+            col.caption(f"{label} unavailable: {exc}")
+
+st.divider()
+
 be_csv = run_dir / f"{molecule}_bioequivalence.csv"
 if be_csv.exists():
     st.subheader("Bioequivalence Data")
@@ -50,10 +79,7 @@ else:
 
 st.divider()
 
-# PAR documents
 st.subheader("PAR Documents")
-molecule_dir = run_dir / molecule
-
 if molecule_dir.exists():
     pdfs = sorted(molecule_dir.rglob("*.pdf"))
     if pdfs:
@@ -61,7 +87,6 @@ if molecule_dir.exists():
 
         for pdf in pdfs:
             rel = pdf.relative_to(molecule_dir)
-            product_folder = rel.parts[0] if len(rel.parts) > 1 else ""
             col1, col2 = st.columns([3, 1])
             col1.markdown(f"`{rel}`")
             col2.download_button(
@@ -76,8 +101,6 @@ if molecule_dir.exists():
 else:
     st.caption("Molecule directory not found.")
 
-# PAR collection
-collection = run_dir / f"{molecule}_PAR_collection"
 if collection.exists():
     flat_pdfs = sorted(collection.glob("*.pdf"))
     if flat_pdfs:
@@ -85,7 +108,6 @@ if collection.exists():
         st.subheader("PAR Collection (flat)")
         st.caption(f"{len(flat_pdfs)} PDFs in flat folder for batch import")
 
-# Database
 st.divider()
 st.subheader("Database")
 db_path = run_dir / f"{molecule}_database.xlsx"
@@ -105,7 +127,6 @@ if db_path.exists():
 else:
     st.caption("No database file found.")
 
-# Run report
 report = run_dir / f"{molecule}_run_report.txt"
 if report.exists():
     with st.expander("Run Report"):

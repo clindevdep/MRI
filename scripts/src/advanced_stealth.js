@@ -14,8 +14,7 @@ export function generateBrowserFingerprint() {
     { width: 1536, height: 864 },
     { width: 1440, height: 900 },
     { width: 1280, height: 720 },
-    { width: 2560, height: 1440 },  // 2K
-    { width: 3840, height: 2160 }   // 4K
+    { width: 2560, height: 1440 }   // 2K — skip 4K, too heavy for low-RAM Docker
   ];
 
   const userAgents = [
@@ -72,7 +71,6 @@ export function getStealthBrowserArgs(viewport) {
     '--no-sandbox',
     '--disable-setuid-sandbox',
     '--disable-dev-shm-usage',
-    '--single-process', // Low-RAM Docker optimization
     '--disable-gpu',
     '--disable-software-rasterizer',
 
@@ -100,7 +98,6 @@ export function getStealthBrowserArgs(viewport) {
     '--disable-audio-output',
 
     // Font fingerprinting resistance
-    '--disable-dev-shm-usage',
     '--disable-font-subpixel-positioning',
 
     // General stealth

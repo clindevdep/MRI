@@ -19,7 +19,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, readdir
 import { join, dirname } from 'path';
 import { execSync } from 'child_process';
 import { config } from 'dotenv';
-import { createStealthBrowser } from './src/advanced_stealth.js';
+import { createStealthBrowser, getRealisticHeaders } from './src/advanced_stealth.js';
 
 config();
 
@@ -260,10 +260,22 @@ async function main() {
 
     const { browser, context, page } = stealthSetup;
 
-    // Enable downloads
+    // Close the initial context — we only need the browser instance
+    // Keeping two contexts + pages under --single-process causes OOM crashes
+    await context.close();
+
+    // Create download-enabled context with stealth fingerprint
     const downloadContext = await browser.newContext({
       acceptDownloads: true,
-      ...stealthSetup.context._options
+      viewport: stealthSetup.fingerprint.viewport,
+      userAgent: stealthSetup.fingerprint.userAgent,
+      locale: stealthSetup.fingerprint.locale,
+      timezoneId: stealthSetup.fingerprint.timezone,
+      colorScheme: stealthSetup.fingerprint.colorScheme,
+      deviceScaleFactor: 1,
+      isMobile: false,
+      hasTouch: false,
+      extraHTTPHeaders: getRealisticHeaders(),
     });
     const downloadPage = await downloadContext.newPage();
 

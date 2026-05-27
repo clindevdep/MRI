@@ -200,7 +200,7 @@ def extract_bioequivalence_data(
     for idx, row in enumerate(table_data):
         row_str = ' '.join([str(cell or '') for cell in row]).lower()
         # PAR format headers have these phrases
-        if 'pharmacokinetic' in row_str or 'geometric mean ratio' in row_str or 'pk parameter' in row_str:
+        if 'pharmacokinetic' in row_str or 'geometric mean ratio' in row_str or 'pk parameter' in row_str or ('parameters' in row_str and 'ratio' in row_str):
             header_row = idx
             break
 
@@ -255,7 +255,7 @@ def extract_bioequivalence_data(
 
             if 'auc0-t' in cell_str or 'auc0t' in cell_str or ('auc' in cell_str and '0-t' in cell_str):
                 pk_params[col_idx] = 'AUC0-t'
-            elif 'auc0-inf' in cell_str or 'auc0-∞' in cell_str:
+            elif 'auc0-inf' in cell_str or 'auc0-∞' in cell_str or 'auc0-∾' in cell_str:
                 pk_params[col_idx] = 'AUC0-inf'
             elif 'auc' in cell_str:
                 pk_params[col_idx] = 'AUC'
@@ -405,7 +405,7 @@ def extract_bioequivalence_data(
 
             if 'auc0-t' in first_cell_normalized or 'auc(0-t)' in first_cell_normalized:
                 pk_param = 'AUC0-t'
-            elif 'auc0-inf' in first_cell_normalized or 'auc(0-inf)' in first_cell_normalized or 'auc0-∞' in first_cell_normalized or 'auc(0-∞)' in first_cell_normalized:
+            elif 'auc0-inf' in first_cell_normalized or 'auc(0-inf)' in first_cell_normalized or 'auc0-∞' in first_cell_normalized or 'auc(0-∞)' in first_cell_normalized or 'auc0-∾' in first_cell_normalized or 'auc(0-∾)' in first_cell_normalized:
                 pk_param = 'AUC0-inf'
             elif 'auc0-tau' in first_cell_normalized or 'auc(0-tau)' in first_cell_normalized:
                 pk_param = 'AUC0-tau'
@@ -503,7 +503,7 @@ def extract_bioequivalence_data(
             if cell and str(cell).strip() and str(cell).strip() not in ['--', '*Ratio\n(90% CI)', '*Ratio (90% CI)']:
                 cell_str = str(cell).replace('\n', ' ').replace('\r', ' ')
                 # Match ratio with CI in formats: "98 (91-106)" or "98.38 (93.50%,103.50%)"
-                if re.search(r'\d+\.?\d*\s*\(\s*\d+\.?\d*%?\s*[,-]\s*\d+\.?\d*%?\s*\)', cell_str):
+                if re.search(r'\d+\.?\d*\s*\(\s*\d+\.?\d*%?\s*[,\-\u2013\u2014]\s*\d+\.?\d*%?\s*\)', cell_str):
                     cv_val = ''
                     if cv_row and col_idx < len(cv_row) and cv_row[col_idx]:
                         cv_str = str(cv_row[col_idx]).strip()
@@ -536,7 +536,7 @@ def extract_bioequivalence_data(
                     if cell and str(cell).strip() and str(cell).strip() != '--':
                         cell_str = str(cell).replace('\n', ' ').replace('\r', ' ')
                         # Match ratio with CI in formats: "98 (91-106)" or "98.38 (93.50%,103.50%)"
-                        if re.search(r'\d+\.?\d*\s*\(\s*\d+\.?\d*%?\s*[,-]\s*\d+\.?\d*%?\s*\)', cell_str):
+                        if re.search(r'\d+\.?\d*\s*\(\s*\d+\.?\d*%?\s*[,\-\u2013\u2014]\s*\d+\.?\d*%?\s*\)', cell_str):
                             ratio_cell = cell
                             matched_col = check_idx
                             if cv_row and check_idx < len(cv_row):
@@ -573,7 +573,7 @@ def extract_bioequivalence_data(
 
             # Try to extract CI (values in parentheses)
             # Format can be: (91-106) or (93.50%,103.50%) or (93.50%, 103.50%)
-            ci_match = re.search(r'\((\d+\.?\d*)%?\s*[,-]\s*(\d+\.?\d*)%?\)', ratio_str)
+            ci_match = re.search(r'\((\d+\.?\d*)%?\s*[,\-\u2013\u2014]\s*(\d+\.?\d*)%?\)', ratio_str)
             if ci_match:
                 ci_val = f"{ci_match.group(1)} - {ci_match.group(2)}"
 

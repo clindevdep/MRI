@@ -46,4 +46,4 @@ HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
 
 EXPOSE 8502
 
-CMD ["streamlit", "run", "/app/src/mri_app/app.py", "--server.port=8502", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "/app/src/mri_app/Home.py", "--server.port=8502", "--server.address=0.0.0.0"]

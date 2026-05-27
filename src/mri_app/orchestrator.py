@@ -105,6 +105,17 @@ def get_tracker_failed_count(tracker_path: Path) -> int:
     )
 
 
+def get_tracker_incomplete_count(tracker_path: Path) -> int:
+    """Count non-completed entries (pending, in_progress, failed) in a tracker."""
+    if not tracker_path.exists():
+        return -1  # tracker doesn't exist yet
+    data = json.loads(tracker_path.read_text())
+    return sum(
+        1 for entry in data.get("products", {}).values()
+        if entry.get("status") != "completed"
+    )
+
+
 def reset_failed_for_retry(tracker_path: Path, search_json: Path | None = None):
     """Reset failed/in_progress entries to pending. Shuffle search_results for randomized retry."""
     import random
@@ -243,7 +254,14 @@ def run_core_downloader(run_dir: Path, core_db_path: Path, search_json: Path):
             print("\n[WARN] Portal blocking detected (exit code 3). VPN rotation needed.", flush=True)
             return 3
 
-        failed_count = get_tracker_failed_count(core_tracker)
+        # Check if script crashed before completing any work
+        incomplete = get_tracker_incomplete_count(core_tracker)
+        if exit_code != 0 and incomplete > 0:
+            print(f"\n[ERROR] Core downloader crashed (exit code {exit_code}) with {incomplete} products incomplete.", flush=True)
+            # Don't report success — continue to retry
+            failed_count = incomplete
+        else:
+            failed_count = get_tracker_failed_count(core_tracker)
 
         if failed_count == 0:
             print("✓ Full database ready (all downloads successful)", flush=True)
@@ -304,7 +322,17 @@ def run_par_downloads(run_dir: Path, molecule: str, core_db_path: Path):
             print("\n[WARN] Portal blocking detected (exit code 3). VPN rotation needed.", flush=True)
             return 3
 
-        failed_count = get_tracker_failed_count(par_tracker)
+        # Check if script crashed (e.g. core DB not found)
+        if exit_code != 0 and not par_tracker.exists():
+            print(f"\n[ERROR] PAR downloader crashed (exit code {exit_code}). Core database may be missing.", flush=True)
+            return 1
+
+        incomplete = get_tracker_incomplete_count(par_tracker)
+        if exit_code != 0 and incomplete > 0:
+            print(f"\n[ERROR] PAR downloader crashed (exit code {exit_code}) with {incomplete} products incomplete.", flush=True)
+            failed_count = incomplete
+        else:
+            failed_count = get_tracker_failed_count(par_tracker)
 
         if failed_count == 0:
             print("✓ PAR downloads completed (all successful)", flush=True)
@@ -363,9 +391,9 @@ RUN INFORMATION
 
 OUTPUT FILES
 ───────────────────────────────────────────────────────────────────
-  • PAR documents:      {run_dir}/{molecule}/
+  • PAR per procedure:  {run_dir}/{molecule}_per_procedure/
   • PAR collection:     {run_dir}/{molecule}_PAR_collection/
-  • Database:           {run_dir}/{molecule}_database.xlsx
+  • Core database:      {run_dir}/{molecule}_core_database.xlsx
   • Bioequivalence CSV: {run_dir}/{molecule}_bioequivalence.csv
   • This report:        {report_path}
 
@@ -556,14 +584,14 @@ def main():
         # ── Finalization ───────────────────────────────────────────
         write_status(run_dir, "finalizing", 3, detail="Creating collection and report")
 
-        # Copy database
-        if core_db_path.exists():
-            db_copy = run_dir / f"{molecule}_database.xlsx"
-            if db_copy != core_db_path:
-                shutil.copy2(core_db_path, db_copy)
-
         # PAR collection
         create_par_collection(run_dir, molecule)
+
+        # Rename molecule dir → _per_procedure for cleaner output
+        mol_dir = run_dir / molecule
+        per_proc_dir = run_dir / f"{molecule}_per_procedure"
+        if mol_dir.is_dir() and not per_proc_dir.exists():
+            mol_dir.rename(per_proc_dir)
 
         # Run report
         generate_run_report(run_dir, molecule, args.mode, args.max_products)

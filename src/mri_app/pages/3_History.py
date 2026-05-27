@@ -4,6 +4,19 @@ import streamlit as st
 from mri_app.runner import list_runs
 
 st.set_page_config(page_title="History — MRI", page_icon="📜", layout="wide")
+
+# Sidebar styling
+st.markdown("""
+<style>
+    [data-testid="stSidebarNav"] li a span {
+        font-size: 1.15rem;
+        font-weight: 700;
+    }
+    [data-testid="stSidebarNav"] li a {
+        padding: 0.5rem 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
 st.title("Run History")
 
 runs = list_runs()
@@ -53,10 +66,14 @@ for run in runs:
         bcol1, bcol2, bcol3 = st.columns(3)
 
         if step == "complete":
-            bcol1.page_link("pages/3_Results.py", label="View Results", icon="📋")
+            if bcol1.button("View Results", key=f"view_{run['name']}"):
+                st.session_state["selected_run"] = run["name"]
+                st.switch_page("pages/2_Session.py")
 
         if running:
-            bcol2.page_link("pages/2_Progress.py", label="View Progress", icon="📊")
+            if bcol2.button("View Progress", key=f"progress_{run['name']}"):
+                st.session_state["selected_run"] = run["name"]
+                st.switch_page("pages/2_Session.py")
 
         if not running and step != "complete":
             if bcol3.button("Resume", key=f"resume_{run['name']}"):

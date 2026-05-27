@@ -9,6 +9,19 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Sidebar styling: bigger bold fonts for navigation
+st.markdown("""
+<style>
+    [data-testid="stSidebarNav"] li a span {
+        font-size: 1.15rem;
+        font-weight: 700;
+    }
+    [data-testid="stSidebarNav"] li a {
+        padding: 0.5rem 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("MRI Portal PAR Downloader")
 st.markdown("Download Public Assessment Reports from the EU MRI Portal and extract bioequivalence data.")
 
@@ -22,14 +35,14 @@ with col1:
     st.page_link("pages/1_New_Run.py", label="Start New Run", icon="🔍")
 
 with col2:
-    st.subheader("Progress")
-    st.markdown("Monitor active pipeline runs. View download progress and logs in real time.")
-    st.page_link("pages/2_Progress.py", label="View Progress", icon="📊")
+    st.subheader("Session")
+    st.markdown("Monitor active pipeline runs and browse results.")
+    st.page_link("pages/2_Session.py", label="View Session", icon="📊")
 
 with col3:
-    st.subheader("Results")
-    st.markdown("Browse completed runs. View bioequivalence data and download PAR documents.")
-    st.page_link("pages/3_Results.py", label="Browse Results", icon="📋")
+    st.subheader("History")
+    st.markdown("Browse all past runs. Resume failed pipelines.")
+    st.page_link("pages/3_History.py", label="View History", icon="📜")
 
 st.divider()
 

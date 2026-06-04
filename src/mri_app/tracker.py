@@ -53,9 +53,15 @@ def tracker_stats(tracker_path: Path) -> dict:
 
 def find_trackers(run_dir: Path, molecule: str) -> dict:
     """Find core and PAR tracker paths for a run."""
+    par_path = run_dir / molecule / "download_tracker.json"
+    if not par_path.exists():
+        # Fallback to renamed folder (post-finalization)
+        alt_path = run_dir / f"{molecule}_per_procedure" / "download_tracker.json"
+        if alt_path.exists():
+            par_path = alt_path
     return {
         "core": run_dir / "core_download_tracker.json",
-        "par": run_dir / molecule / "download_tracker.json",
+        "par": par_path,
     }
 
 

@@ -194,3 +194,9 @@ _(will be populated as tests are run)_
 - Recreated mri container; verified Streamlit serves with 1_New_Run.py + 2_Session.py + 3_History.py
 - Context purge: memory note at /home/clindevdep/.claude/projects/-home-clindevdep-AI/memory/purge_resume_20260527.md
 - Pending TODO: user retest of the Posaconazole pipeline Start Pipeline flow
+
+{clindevdep-T470; Claude; 2026-06-04_0930} context purge
+- Completed: Investigated and fixed Betahistine run being stuck and showing 0 downloads. Resolved zombie process handling in runner.py, folder renaming tracking in tracker.py, and fallback validation in download_and_merge_products_v20.js. Hot-patched container.
+- Remaining TODO: Run end-to-end workflow tests with real data, integrate Gluetun API for automated VPN rotation.
+- Memory Note: /home/clindevdep/.claude/projects/-home-clindevdep-AI/memory/purge_resume_20260604.md
+

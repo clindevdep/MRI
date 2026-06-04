@@ -67,16 +67,43 @@ def start_pipeline(
 
 
 def is_running(run_dir: Path) -> bool:
-    """Check if the pipeline process is still alive."""
+    """Check if the pipeline process is still alive and belongs to the orchestrator."""
     pid_file = run_dir / "pid"
     if not pid_file.exists():
         return False
 
-    pid = int(pid_file.read_text().strip())
+    try:
+        pid = int(pid_file.read_text().strip())
+    except (ValueError, TypeError):
+        return False
+
     try:
         # Signal 0 checks existence without killing
         import os
         os.kill(pid, 0)
+
+        # Check if the process is a zombie
+        proc_status_path = Path(f"/proc/{pid}/status")
+        if proc_status_path.exists():
+            try:
+                for line in proc_status_path.read_text().splitlines():
+                    if line.startswith("State:"):
+                        state = line.split(":", 1)[1].strip()
+                        if "zombie" in state.lower() or state.startswith("Z"):
+                            return False
+            except OSError:
+                pass
+
+        # Check if the PID belongs to orchestrator.py (recycled PID check)
+        proc_cmdline_path = Path(f"/proc/{pid}/cmdline")
+        if proc_cmdline_path.exists():
+            try:
+                cmdline = proc_cmdline_path.read_text()
+                if "orchestrator.py" not in cmdline:
+                    return False
+            except OSError:
+                pass
+
         return True
     except (ProcessLookupError, PermissionError):
         return False

@@ -190,6 +190,10 @@ async function downloadProductExcel(page, context, productKey, outputPath, track
       // Strategy 2: Context request fallback
       const { response } = await downloadViaContextRequest(context, productKey);
       const body = await response.body();
+      const bodyStr = body.toString().trim();
+      if (bodyStr.startsWith('<!DOCTYPE html>') || bodyStr.startsWith('<html') || bodyStr.includes('<app-root>')) {
+        throw new Error('Fallback returned HTML instead of Excel');
+      }
       writeFileSync(outputPath, body);
       return 'context_request_fallback';
     } catch (fallbackError) {

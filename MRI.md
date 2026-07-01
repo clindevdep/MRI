@@ -22,6 +22,14 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 - **Subdomain:** mri.clindevdep.com (Traefik + OAuth)
 - **Data:** Persistent volume at `/home/clindevdep/docker/appdata/mri/`
 
+## Rollback (v20 stable → v21 work)
+- **Git:** stable state tagged `v20-stable` (commit `e32669b`); v21 work on branch `v21-swe-pk`.
+  Revert code: `git checkout v20-stable` (or `git checkout main`).
+- **Image:** the last-known-good image is tagged `mri:v20` (= `docker-mri:latest` @ `81f940ef45ea`).
+  Revert container: re-point the mri service to `mri:v20` and recreate
+  (`DOCKER_HOST=unix:///var/run/docker.sock`; container uses `network_mode: service:gluetun`).
+- New v21 image is built under a **separate tag** and only cut over after verification.
+
 ## Pipeline (aligned to RUN_v20.sh from MRI_Mar2026)
 1. **Core DB acquisition** — three modes:
    - **automatic**: search MRI portal by molecule name → download extended info
@@ -75,8 +83,24 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 - [ ] 4.3 Patch process_molecule_v10.js: replace exit-on-block (code 3) with rotate-and-retry loop
 - [ ] 4.4 End-to-end test: full molecule download with automatic rotation
 
+### Stage 5: v21 — SWE PARs, PK aggregation, sample size (branch v21-swe-pk)
+- [x] 5.0 Rollback net: tag `v20-stable`, branch `v21-swe-pk`, image `mri:v20`
+- [x] 5.1 App opens on Progress tab (Session dashboard folded into Home.py, Progress tab first)
+- [x] 5.2 Correct progress eval: source-aware stats (with_pars/empty), composite progress bar
+- [x] 5.3 Fix stuck "running" spinner (is_running terminal-status short-circuit)
+- [x] 5.4 CVw screening + pooled sample size: user's CVw_Screening_v02.R (Jirka) → runnable CVw_Screening_v03.R (arg-driven, JSON out) + sample_size.py wrapper + Sample Size tab
+- [x] 5.5 SWE agency PAR download (scripts/src/swe_agency_v1.js, RMS=SE link-following in process_molecule_v10.js)
+- [x] 5.6 PK aggregation (scripts/src/aggregate_pk_data.py → _pk_studies.csv + _CVw_Screening.csv + summary; orchestrator step; selectable Results table)
+- [x] 5.7 Integrate CVw_Screening (replaces earlier PowerTOST stub): CVfromCI + sampleN.TOST + CVpooled; reported-vs-calculated CVw cross-check
+- [ ] 5.8 Build `mri:v21` (adds R+PowerTOST+jsonlite), deploy, cut over from mri:v20
+- [ ] 5.9 Live verify: Melatonin (52 SE products) — confirm docetp link-following works or add docetp search fallback
+- [ ] 5.10 (optional) VLM PDF-digest extraction via Full-texts bridge / Legion for robust PK parsing
+
 ## Test Results
-_(will be populated as tests are run)_
+- 5.4/5.7 CVw_Screening_v03.R + wrapper: CVfromCI/sampleN.TOST/CVpooled verified on host (R 4.4.3); per-study CVw calc from CI, reported-vs-calc cross-check, pooled CVw + pooled N by PK; UI records→study_from_row→screening path tested (Pool flag toggles pooling correctly).
+- 5.2/5.3: tracker_stats + is_running unit-tested (terminal status → not-running; with_pars/empty/sources correct).
+- 5.5: SWE link extraction unit-tested (English PAR prioritised, portal-internal links excluded). Live portal link-rendering NOT yet confirmed.
+- 5.6: aggregation tested on synthetic (dedup, GMR/CI normalisation, pooled CV) + real ketoprofen (empty-CV → 0 studies, no crash).
 
 ## LOG
 
@@ -194,6 +218,23 @@ _(will be populated as tests are run)_
 - Recreated mri container; verified Streamlit serves with 1_New_Run.py + 2_Session.py + 3_History.py
 - Context purge: memory note at /home/clindevdep/.claude/projects/-home-clindevdep-AI/memory/purge_resume_20260527.md
 - Pending TODO: user retest of the Posaconazole pipeline Start Pipeline flow
+
+{vmi1967850; Claude Opus 4.8; 2026-07-01_1447} v21 feature work — SWE PARs, PK aggregation, sample size
+- Branch `v21-swe-pk` off `v20-stable` (e32669b); image `mri:v20` retained for instant rollback.
+- App now opens on the Progress tab: folded the Session dashboard into Home.py (Progress tab first), deleted pages/2_Session.py, repointed switch_page refs to Home.py.
+- Correct progress evaluation: tracker.py tracker_stats now source-aware (with_pars/empty/processed/sources); Home progress bar is composite (core+PAR+extraction weighted).
+- Fixed stuck top-right "running" spinner: runner.py is_running() short-circuits to False on terminal status.json (complete/failed/blocked) — authoritative over PID/zombie state.
+- Sample size: user supplied CVw_Screening_v02.R (Jirka's CVfromCI+sampleN.TOST+CVpooled). Adapted to runnable CVw_Screening_v03.R (no setwd, arg-driven input CSV/out dir, JSON stdout, adds pooled-N-from-pooled-CVw + reported-vs-calculated CVw cross-check). Wrapped by src/mri_app/sample_size.py; Sample Size tab shows pooled CVw/N per PK + per-study cross-check. aggregate_pk_data.py now emits _CVw_Screening.csv in the defined column format and keeps rows with CI+N even when no CV was reported. Dockerfile installs R via r-base-core + Posit Package Manager *binary* packages (bookworm) for jsonlite/mvtnorm/cubature/PowerTOST — precompiled, so NO gfortran/C++ toolchain and fast build (verified in a throwaway node:22-bookworm-slim container: installs as *binary*, CVfromCI works, no compiler present).
+- SWE agency: scripts/src/swe_agency_v1.js follows outbound docetp.mpa.se/Läkemedelsverket PAR links from the MRI portal page for RMS=SE procedures (prefix of procedure_code); wired into process_molecule_v10.js with entry.source/entry.rms tracking + fallback to MRI-portal archive icons.
+- PK aggregation: scripts/src/aggregate_pk_data.py normalises the BE csv → _pk_studies.csv + _pk_summary.json (per-param pooled/median/max CV); orchestrator Step 3b; selectable Results table feeds the Sample Size tab.
+- All changes unit-tested on host (R 4.4.3 + PowerTOST + jsonlite present). NOT yet built/deployed — pending user R script + build approval + live Melatonin SWE test.
+- Plan: /home/clindevdep/.claude/plans/validated-drifting-tide.md
+
+{vmi1967850; Claude Opus 4.8; 2026-07-01_1546} context purge
+- Event: context purge before building/deploying mri:v21.
+- Completed: all v21 code on branch v21-swe-pk (start-on-Progress, source-aware progress + stuck-spinner fix, SWE agency docetp link-following, PK aggregation + _CVw_Screening.csv, CVw_Screening_v03.R integration of user's v02 with sample_size.py + Sample Size tab). R install solved without Fortran via Posit PPM bookworm binaries (r-base-core). All host-tested; not yet built/deployed.
+- Remaining: build mri:v21 → smoke-test → cut over from mri:v20 → live Melatonin SWE verify (docetp link-render unconfirmed; fallback needs docker exec which sandbox gated) → commit/push.
+- Memory note: /home/clindevdep/.claude/projects/-home-clindevdep-AI/memory/purge_resume_20260701.md
 
 {clindevdep-T470; Claude; 2026-06-04_0930} context purge
 - Completed: Investigated and fixed Betahistine run being stuck and showing 0 downloads. Resolved zombie process handling in runner.py, folder renaming tracking in tracker.py, and fallback validation in download_and_merge_products_v20.js. Hot-patched container.

@@ -578,6 +578,19 @@ def main():
             )
             if exit_code != 0:
                 print(f"[WARN] BE extraction completed with warnings (exit {exit_code})", flush=True)
+
+            # Aggregate the extracted PK/BE data into analysis-ready study rows + summary
+            be_csv = run_dir / f"{molecule}_bioequivalence.csv"
+            if be_csv.exists():
+                print("[Step 3b] Aggregating PK study data...", flush=True)
+                write_status(run_dir, "extraction", 3, detail="Aggregating PK study data")
+                agg_code = run_step(
+                    ["python3", str(SCRIPTS_DIR / "src" / "aggregate_pk_data.py"), str(be_csv)],
+                    cwd=run_dir,
+                    step_name="PK Data Aggregation",
+                )
+                if agg_code != 0:
+                    print(f"[WARN] PK aggregation exited with code {agg_code}", flush=True)
         else:
             print(f"[SKIP] No PDFs found in {molecule_dir}, skipping BE extraction", flush=True)
 

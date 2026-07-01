@@ -66,8 +66,24 @@ def start_pipeline(
     return proc.pid
 
 
+# Statuses the orchestrator writes as its final action for a run. Once one of
+# these is present, the run is finished regardless of PID/zombie state — this
+# is authoritative and prevents the UI "running" spinner from sticking forever.
+TERMINAL_STATES = {"complete", "failed", "blocked"}
+
+
 def is_running(run_dir: Path) -> bool:
     """Check if the pipeline process is still alive and belongs to the orchestrator."""
+    # Authoritative short-circuit: a terminal status.json means the run ended.
+    status_file = run_dir / "status.json"
+    if status_file.exists():
+        try:
+            step = json.loads(status_file.read_text()).get("step")
+            if step in TERMINAL_STATES:
+                return False
+        except (json.JSONDecodeError, OSError):
+            pass
+
     pid_file = run_dir / "pid"
     if not pid_file.exists():
         return False

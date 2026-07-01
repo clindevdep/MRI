@@ -12,6 +12,7 @@
 
 import { chromium } from 'playwright';
 import { createSoloIDBrowser, humanDelay, humanClick } from './src/solo_id_v10.js';
+import { getRMS, isSwedishRMS, extractAgencyParLinks, downloadAgencyPARs } from './src/swe_agency_v1.js';
 import fs from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
@@ -229,7 +230,14 @@ async function downloadProductPARs(product, productIndex, totalProducts, tracker
   // Mark in-progress
   entry.status = 'in_progress';
   entry.attempt_count = (entry.attempt_count || 0) + 1;
+  entry.rms = getRMS(product.procedure_code);
+  entry.source = 'mri_portal';
   saveTracker(tracker);
+
+  const swedishRMS = isSwedishRMS(product.procedure_code);
+  if (swedishRMS) {
+    console.log(`   🇸🇪 RMS = SE — will follow linked SWE agency (docetp.mpa.se) PARs`);
+  }
 
   const { browser, context, page, fingerprint } = await createSoloIDBrowser(
     chromium,
@@ -272,8 +280,26 @@ async function downloadProductPARs(product, productIndex, totalProducts, tracker
       await humanClick(page, 'text=Documents');
       await humanDelay(2000, 3000);
 
-      console.log(`   → Finding download icons...`);
-      const downloadIcons = await page.locator('mat-icon:has-text("archive")').all();
+      // SE-RMS products: PARs live on the Swedish agency web (docetp.mpa.se),
+      // linked from this page. Follow those links first.
+      if (swedishRMS) {
+        console.log(`   → Scanning for linked SWE agency PARs...`);
+        const agencyLinks = await extractAgencyParLinks(page);
+        console.log(`   → Found ${agencyLinks.length} candidate agency link(s)`);
+        if (agencyLinks.length > 0) {
+          const { count, files } = await downloadAgencyPARs(context, agencyLinks, productFolder);
+          if (count > 0) {
+            downloadCount += count;
+            parFiles.push(...files);
+            entry.source = 'swe_agency';
+          }
+        }
+      }
+
+      // MRI-portal attachments (fallback for SE if no agency PAR found; default path otherwise)
+      const downloadIcons = downloadCount > 0
+        ? []
+        : await page.locator('mat-icon:has-text("archive")').all();
       console.log(`   → Found ${downloadIcons.length} documents`);
 
       for (let i = 0; i < downloadIcons.length; i++) {

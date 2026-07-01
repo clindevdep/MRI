@@ -68,12 +68,12 @@ for run in runs:
         if step == "complete":
             if bcol1.button("View Results", key=f"view_{run['name']}"):
                 st.session_state["selected_run"] = run["name"]
-                st.switch_page("pages/2_Session.py")
+                st.switch_page("Home.py")
 
         if running:
             if bcol2.button("View Progress", key=f"progress_{run['name']}"):
                 st.session_state["selected_run"] = run["name"]
-                st.switch_page("pages/2_Session.py")
+                st.switch_page("Home.py")
 
         if not running and step != "complete":
             if bcol3.button("Resume", key=f"resume_{run['name']}"):

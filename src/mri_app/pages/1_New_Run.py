@@ -141,4 +141,4 @@ if st.button("Start Pipeline", type="primary", disabled=not can_start):
         )
 
     st.session_state["selected_run"] = run_dir.name
-    st.switch_page("pages/2_Session.py")
+    st.switch_page("Home.py")

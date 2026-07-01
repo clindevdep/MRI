@@ -30,6 +30,15 @@ RUN uv venv /app/.venv && \
     uv pip install --python /app/.venv/bin/python \
     streamlit pandas openpyxl pypdf lxml pdfplumber
 
+# R + PowerTOST for CVw screening / bioequivalence sample size.
+# Use Posit Package Manager *binary* packages for Debian bookworm — mvtnorm
+# (Fortran) and cubature (C++) come precompiled, so the image needs NO gfortran
+# / C++ toolchain and the build stays fast. r-base-core (not full r-base) avoids
+# pulling the build toolchain via recommends.
+RUN apt-get update && apt-get install -y --no-install-recommends r-base-core \
+    && rm -rf /var/lib/apt/lists/*
+RUN Rscript -e 'options(HTTPUserAgent=sprintf("R/%s R (%s)", getRversion(), paste(getRversion(), R.version["platform"], R.version["arch"], R.version["os"])), repos=c(PPM="https://packagemanager.posit.co/cran/__linux__/bookworm/latest")); install.packages(c("jsonlite","mvtnorm","cubature","PowerTOST"))'
+
 # Copy application code
 COPY scripts/ ./scripts/
 COPY src/ ./src/

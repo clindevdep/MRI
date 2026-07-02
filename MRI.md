@@ -92,14 +92,16 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 - [x] 5.5 SWE agency PAR download (scripts/src/swe_agency_v1.js, RMS=SE link-following in process_molecule_v10.js)
 - [x] 5.6 PK aggregation (scripts/src/aggregate_pk_data.py → _pk_studies.csv + _CVw_Screening.csv + summary; orchestrator step; selectable Results table)
 - [x] 5.7 Integrate CVw_Screening (replaces earlier PowerTOST stub): CVfromCI + sampleN.TOST + CVpooled; reported-vs-calculated CVw cross-check
-- [ ] 5.8 Build `mri:v21` (adds R+PowerTOST+jsonlite), deploy, cut over from mri:v20
-- [ ] 5.9 Live verify: Melatonin (52 SE products) — confirm docetp link-following works or add docetp search fallback
+- [x] 5.8 Build `mri:v21` (adds R+PowerTOST+jsonlite), deploy, cut over from mri:v20 — DONE 2026-07-01, live container healthy on v21
+- [~] 5.9 Live verify: Melatonin (52 SE products) — SWE code runs cleanly BUT portal exposes 0 docetp links → link-following yields 0 PARs; needs docetp on-site search fallback (see 5.11)
+- [ ] 5.11 **NEW (blocks SWE):** docetp.mpa.se on-site search fallback — search docetp directly by product/procedure for SE (s)PAR PDFs, since MRI portal does not link out to them
 - [ ] 5.10 (optional) VLM PDF-digest extraction via Full-texts bridge / Legion for robust PK parsing
 
 ## Test Results
 - 5.4/5.7 CVw_Screening_v03.R + wrapper: CVfromCI/sampleN.TOST/CVpooled verified on host (R 4.4.3); per-study CVw calc from CI, reported-vs-calc cross-check, pooled CVw + pooled N by PK; UI records→study_from_row→screening path tested (Pool flag toggles pooling correctly).
 - 5.2/5.3: tracker_stats + is_running unit-tested (terminal status → not-running; with_pars/empty/sources correct).
-- 5.5: SWE link extraction unit-tested (English PAR prioritised, portal-internal links excluded). Live portal link-rendering NOT yet confirmed.
+- 5.5: SWE link extraction unit-tested (English PAR prioritised, portal-internal links excluded).
+- 5.8/5.9 LIVE (2026-07-01, mri:v21, gluetun exit BE/EU): Melatonin basic run (122 products). Core stage downloaded 113/122 then hit the pre-existing exit-code-3 portal block during straggler retries (not a v21 bug; no auto VPN rotation yet). Targeted 4-product SE-only run (SE/H/1592/001, SE/H/2048/001/004/005) reached the PAR stage cleanly: correctly detected RMS=SE, ran swe_agency scanner (broad `a[href]` host filter), correctly skipped the mri-product-details Excel — but "Found 0 candidate agency link(s)" on every SE product page → 0 PARs. CONCLUSION: the MRI portal does not render outbound docetp.mpa.se links for these products; SWE PARs must be fetched via docetp on-site search (TODO 5.11). v21 SWE code degrades gracefully (0 PARs, no crash).
 - 5.6: aggregation tested on synthetic (dedup, GMR/CI normalisation, pooled CV) + real ketoprofen (empty-CV → 0 studies, no crash).
 
 ## LOG
@@ -235,6 +237,15 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 - Completed: all v21 code on branch v21-swe-pk (start-on-Progress, source-aware progress + stuck-spinner fix, SWE agency docetp link-following, PK aggregation + _CVw_Screening.csv, CVw_Screening_v03.R integration of user's v02 with sample_size.py + Sample Size tab). R install solved without Fortran via Posit PPM bookworm binaries (r-base-core). All host-tested; not yet built/deployed.
 - Remaining: build mri:v21 → smoke-test → cut over from mri:v20 → live Melatonin SWE verify (docetp link-render unconfirmed; fallback needs docker exec which sandbox gated) → commit/push.
 - Memory note: /home/clindevdep/.claude/projects/-home-clindevdep-AI/memory/purge_resume_20260701.md
+
+{vmi1967850; Claude Opus 4.8; 2026-07-01_1700} Built + deployed mri:v21; live SWE finding
+- BUILD: `mri:v21` (2.11GB) built via DOCKER_HOST=unix:///var/run/docker.sock. R + PowerTOST installed as Posit PPM *binaries* — confirmed no Fortran/C++ toolchain, fast build.
+- SMOKE (throwaway container, port 18502): Streamlit health ok, root 200, Rscript+PowerTOST load (R 4.2.2), full Python→R CVw sample-size chain OK (pooled CVw 16.6%, N=14@80%/18@90%), app opens on Progress tab. Container removed after.
+- CUTOVER: retagged docker-mri:latest → mri:v21 (mri:v20 tag + v20-stable git tag preserved for rollback); recreated live `mri` container via `docker run` (network container:gluetun, mount /data, TZ/ENABLE_PROXY env, compose grouping labels) — NOT via compose because master-stack env interpolation needs the transient /tmp/docker-build.env (gone). No Traefik labels on the container (routing is external file-provider). Live container healthy on v21, R present.
+  - ROLLBACK: `docker tag mri:v20 docker-mri:latest && docker rm -f mri && docker run …` (same run cmd, image docker-mri:latest=v20).
+- LIVE TEST (gluetun exit BE/EU): Melatonin basic run 122 products → core got 113/122 then pre-existing exit-code-3 portal block on straggler retries (no auto VPN rotation; NOT a v21 regression). Targeted 4-product SE-only run reached PAR stage cleanly: RMS=SE detected, swe_agency scanner ran, Excel metadata correctly skipped, but "Found 0 candidate agency link(s)" → 0 PARs. FINDING: MRI portal does not expose docetp.mpa.se links for these SE products → SWE needs a docetp on-site search fallback (TODO 5.11). Note: `docker exec` into mri worked fine this session (earlier sandbox-block note did not apply).
+- gluetun SERVER_COUNTRIES is EMPTY (provider surfshark) → a VPN rotation could land non-EU (docetp 403s non-EU) — must set EU pool before relying on rotation (relates to TODO 4.2). Control API returns Unauthorized (token required).
+- PENDING: commit/push v21-swe-pk; decide on docetp search fallback (5.11); optional live DOM-capture probe to 100% confirm link-absence vs selector.
 
 {clindevdep-T470; Claude; 2026-06-04_0930} context purge
 - Completed: Investigated and fixed Betahistine run being stuck and showing 0 downloads. Resolved zombie process handling in runner.py, folder renaming tracking in tracker.py, and fallback validation in download_and_merge_products_v20.js. Hot-patched container.

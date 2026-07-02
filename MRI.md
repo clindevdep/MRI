@@ -93,8 +93,8 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 - [x] 5.6 PK aggregation (scripts/src/aggregate_pk_data.py → _pk_studies.csv + _CVw_Screening.csv + summary; orchestrator step; selectable Results table)
 - [x] 5.7 Integrate CVw_Screening (replaces earlier PowerTOST stub): CVfromCI + sampleN.TOST + CVpooled; reported-vs-calculated CVw cross-check
 - [x] 5.8 Build `mri:v21` (adds R+PowerTOST+jsonlite), deploy, cut over from mri:v20 — DONE 2026-07-01, live container healthy on v21
-- [~] 5.9 Live verify: Melatonin SE — SWE code runs cleanly but `extractAgencyParLinks` finds 0 links; DOM probe proved the agency links ARE on the page as Angular-Material `open_in_new` buttons (URL in tooltip, not `<a href>`) → scanner selector gap, NOT true absence.
-- [ ] 5.11 **NEW (fixes SWE):** broaden `extractAgencyParLinks` to read Material external-link buttons — extract URL from the `cdk-describedby-message` tooltip (`aria-describedby`), filter agency hosts. Then handle 2nd hop: the tooltip URL is a `lakemedelsverket.se/sok-lakemedelsfakta` facts page, not a direct PDF — need to follow it to the actual (s)PAR PDF. Diagnostic: `scripts/probe_swe_dom_v1.js`.
+- [x] 5.9 Live verify: Melatonin SE — SWE code runs cleanly; DOM probe proved the agency links ARE on the page as Angular-Material `open_in_new` buttons (URL in tooltip, not `<a href>`) → scanner selector gap. FIXED (5.11).
+- [x] 5.11 SWE 2-hop fix — `collectSwedishAgencyPARs()` reads Material tooltip landing URLs (portal → lakemedelsverket facts page) then scans that page for docetp PAR/sPAR PDFs (filtered to PAR/sPAR, English first). LIVE-VERIFIED on mri:v21: SE/H/2048/001/004/005 each download ENG PAR (253KB) + ENG sPAR (29KB) valid PDFs. Diagnostics: `scripts/probe_swe_dom_v1.js`, `scripts/probe_facts_v1.js`. (SE/H/1592/001 → 0: genuine absence, no agency link on its portal page.)
 - [ ] 5.10 (optional) VLM PDF-digest extraction via Full-texts bridge / Legion for robust PK parsing
 
 ## Test Results
@@ -247,6 +247,12 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 - LIVE TEST (gluetun exit BE/EU): Melatonin basic run 122 products → core got 113/122 then pre-existing exit-code-3 portal block on straggler retries (no auto VPN rotation; NOT a v21 regression). Targeted 4-product SE-only run reached PAR stage cleanly: RMS=SE detected, swe_agency scanner ran, Excel metadata correctly skipped, but "Found 0 candidate agency link(s)" → 0 PARs. FINDING: MRI portal does not expose docetp.mpa.se links for these SE products → SWE needs a docetp on-site search fallback (TODO 5.11). Note: `docker exec` into mri worked fine this session (earlier sandbox-block note did not apply).
 - gluetun SERVER_COUNTRIES is EMPTY (provider surfshark) → a VPN rotation could land non-EU (docetp 403s non-EU) — must set EU pool before relying on rotation (relates to TODO 4.2). Control API returns Unauthorized (token required).
 - PENDING: commit/push v21-swe-pk; decide on docetp search fallback (5.11); optional live DOM-capture probe to 100% confirm link-absence vs selector.
+
+{vmi1967850; Claude Opus 4.8; 2026-07-02_1420} SWE PAR download FIXED + live-verified
+- Two DOM probes nailed the chain: MRI portal renders the SWE agency link as an Angular-Material `open_in_new` button with the URL in a `cdk-describedby` tooltip (not `<a href>`) → old `a[href]` scanner saw 0. Tooltip → `lakemedelsverket.se/sok-lakemedelsfakta` facts page, which lists the docetp.mpa.se PAR/sPAR PDFs as PLAIN anchors.
+- Fix (swe_agency_v1.js): `extractAgencyLandingLinks()` (reads Material tooltip URLs) + `collectSwedishAgencyPARs()` (2-hop: portal tooltip → facts page → docetp PDFs, filtered to PAR/sPAR only, English first, cookie dismissal). Wired process_molecule_v10.js SE branch to it. Added scripts/probe_facts_v1.js.
+- LIVE (mri:v21, hot-patched scripts, gluetun BE/EU): SE4 export → SE/H/2048/001/004/005 each downloaded ENG PAR (253KB) + ENG sPAR (29KB) valid %PDFs (6 total, 2 unique). SE/H/1592/001 → 0 (genuine: no open_in_new/agency ref on its portal page).
+- Committed 1821f10 + pushed v21-swe-pk. NEXT: rebuild mri:v21 to bake the fix in (container currently hot-patched — restart would revert), redeploy, then optional full Melatonin re-run needs VPN rotation for the core-stage block.
 
 {clindevdep-T470; Claude; 2026-06-04_0930} context purge
 - Completed: Investigated and fixed Betahistine run being stuck and showing 0 downloads. Resolved zombie process handling in runner.py, folder renaming tracking in tracker.py, and fallback validation in download_and_merge_products_v20.js. Hot-patched container.

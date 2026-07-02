@@ -255,6 +255,12 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 - Committed 1821f10 + pushed v21-swe-pk. Rebuilt mri:v21 (535ec08) with the fix baked in and REDEPLOYED (retag docker-mri:latest → 535ec08, recreate container) — live container healthy, fix baked (not hot-patched), durable across restarts. Rollback mri:v20 (81f940) intact.
 - Remaining (unchanged, pre-existing): a full 122-product run still needs VPN rotation to clear the core-stage exit-code-3 block (Stage 4, unbuilt); targeted SE runs work. gluetun SERVER_COUNTRIES empty → set EU pool before relying on rotation.
 
+{clindevdep-T470; Claude; 2026-07-02_1541} context purge
+- Event: context purge after completing all v21 goals.
+- Completed: mri:v21 built + deployed durably (535ec08); SWE agency PAR download FIXED and LIVE-VERIFIED (2-hop portal Material-tooltip → lakemedelsverket facts page → docetp PAR/sPAR PDFs via new collectSwedishAgencyPARs()); SE/H/2048/001/004/005 download ENG PAR+sPAR; rollback mri:v20 intact; all pushed to v21-swe-pk.
+- Remaining (all optional): full-run VPN rotation (Stage 4) + gluetun EU SERVER_COUNTRIES for the core-stage block; 5.10 VLM PK extraction; merge v21-swe-pk → main + tag v21 release.
+- Memory note: /home/clindevdep/.claude/projects/-home-clindevdep-AI/memory/purge_resume_20260702.md
+
 {clindevdep-T470; Claude; 2026-06-04_0930} context purge
 - Completed: Investigated and fixed Betahistine run being stuck and showing 0 downloads. Resolved zombie process handling in runner.py, folder renaming tracking in tracker.py, and fallback validation in download_and_merge_products_v20.js. Hot-patched container.
 - Remaining TODO: Run end-to-end workflow tests with real data, integrate Gluetun API for automated VPN rotation.

@@ -12,7 +12,7 @@
 
 import { chromium } from 'playwright';
 import { createSoloIDBrowser, humanDelay, humanClick } from './src/solo_id_v10.js';
-import { getRMS, isSwedishRMS, extractAgencyParLinks, downloadAgencyPARs } from './src/swe_agency_v1.js';
+import { getRMS, isSwedishRMS, collectSwedishAgencyPARs, downloadAgencyPARs } from './src/swe_agency_v1.js';
 import fs from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
@@ -283,9 +283,9 @@ async function downloadProductPARs(product, productIndex, totalProducts, tracker
       // SE-RMS products: PARs live on the Swedish agency web (docetp.mpa.se),
       // linked from this page. Follow those links first.
       if (swedishRMS) {
-        console.log(`   → Scanning for linked SWE agency PARs...`);
-        const agencyLinks = await extractAgencyParLinks(page);
-        console.log(`   → Found ${agencyLinks.length} candidate agency link(s)`);
+        console.log(`   → Scanning for linked SWE agency PARs (portal → lakemedelsverket → docetp)...`);
+        const agencyLinks = await collectSwedishAgencyPARs(context, page);
+        console.log(`   → Found ${agencyLinks.length} candidate agency PAR link(s)`);
         if (agencyLinks.length > 0) {
           const { count, files } = await downloadAgencyPARs(context, agencyLinks, productFolder);
           if (count > 0) {

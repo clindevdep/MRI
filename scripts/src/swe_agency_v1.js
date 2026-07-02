@@ -67,6 +67,97 @@ export async function extractAgencyParLinks(page) {
   return candidates;
 }
 
+/**
+ * Extract agency "landing page" links that the MRI portal renders as
+ * Angular-Material external-link buttons (mat-icon "open_in_new"): the target
+ * URL is NOT an <a href> — it lives in the button's tooltip
+ * (aria-describedby -> a `cdk-describedby-message` / role="tooltip" element whose
+ * text is e.g. "External link: https://www.lakemedelsverket.se/…"). The
+ * `a[href]` scanner in extractAgencyParLinks() cannot see these, which is why
+ * SE products previously yielded 0 candidate links. Returns unique agency URLs.
+ */
+export async function extractAgencyLandingLinks(page) {
+  const urls = await page.evaluate(() => {
+    const out = [];
+    document
+      .querySelectorAll('[id^="cdk-describedby-message"], [role="tooltip"]')
+      .forEach(el => {
+        const m = (el.textContent || '').match(/https?:\/\/[^\s"'<>]+/);
+        if (m) out.push(m[0]);
+      });
+    return out;
+  }).catch(() => []);
+
+  const seen = new Set();
+  const result = [];
+  for (const u of urls) {
+    const lo = u.toLowerCase();
+    if (!AGENCY_HOSTS.some(host => lo.includes(host))) continue;
+    if (lo.endsWith('.pdf')) continue; // direct PDFs are handled elsewhere
+    if (seen.has(u)) continue;
+    seen.add(u);
+    result.push(u);
+  }
+  return result;
+}
+
+/** Best-effort dismissal of a Swedish cookie gate that can overlay content. */
+async function acceptCookies(pg) {
+  for (const label of ['Godkänn alla', 'Godkänn', 'Acceptera alla', 'Acceptera', 'Tillåt alla', 'Accept all']) {
+    const b = pg.locator(`text=${label}`).first();
+    if (await b.count().catch(() => 0)) {
+      await b.click().catch(() => {});
+      await pg.waitForTimeout(800);
+      return;
+    }
+  }
+}
+
+/**
+ * Collect SWE-RMS PAR/sPAR PDF links for the currently-open MRI portal product
+ * page. Handles both shapes:
+ *   (a) direct agency anchors on the portal page (rare), and
+ *   (b) the common 2-hop: portal Material tooltip -> lakemedelsverket
+ *       "sok-lakemedelsfakta" facts page -> docetp.mpa.se PAR/sPAR PDF anchors.
+ * Only assessment reports (PAR/sPAR) are kept — package leaflets, SmPC and sRMP
+ * are excluded. Returns a deduped, English-first array of { url, text }.
+ */
+export async function collectSwedishAgencyPARs(context, page) {
+  const seen = new Set();
+  const collected = [];
+  const add = a => { if (a && a.url && !seen.has(a.url)) { seen.add(a.url); collected.push(a); } };
+
+  // (a) direct agency anchors already on the portal page
+  for (const a of await extractAgencyParLinks(page)) add(a);
+
+  // (b) follow Material-tooltip landing pages and scan those for docetp PDFs
+  const landings = await extractAgencyLandingLinks(page);
+  for (const landing of landings) {
+    let lp;
+    try {
+      lp = await context.newPage();
+      await lp.goto(landing, { waitUntil: 'domcontentloaded', timeout: 40000 });
+      await lp.waitForLoadState('networkidle', { timeout: 12000 }).catch(() => {});
+      await acceptCookies(lp);
+      for (const a of await extractAgencyParLinks(lp)) add(a);
+    } catch (err) {
+      console.log(`      ⚠️  Agency landing page failed (${landing}): ${err.message}`);
+    } finally {
+      if (lp) await lp.close().catch(() => {});
+    }
+  }
+
+  // Keep only assessment reports (PAR / sPAR); drop PL / SmPC / sRMP.
+  const pars = collected.filter(a => looksLikePAR(a.text, a.url));
+
+  // Prefer English-language documents first.
+  pars.sort((x, y) => {
+    const eng = s => /\beng\b|english/i.test(`${s.text} ${s.url}`) ? 0 : 1;
+    return eng(x) - eng(y);
+  });
+  return pars;
+}
+
 function safeFilename(url, index) {
   try {
     const base = decodeURIComponent(url.split('/').pop().split('?')[0]) || `agency_PAR_${index}.pdf`;

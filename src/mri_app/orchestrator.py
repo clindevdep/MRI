@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MRI Pipeline Orchestrator v20 — replaces RUN.sh for Docker container execution.
+MRI Pipeline Orchestrator v22 — replaces RUN.sh for Docker container execution.
 
 Three-step pipeline:
   1. Core DB acquisition (search portal, build from basic export, or use full DB)
@@ -241,7 +241,7 @@ def run_core_downloader(run_dir: Path, core_db_path: Path, search_json: Path):
         exit_code = run_step(
             [
                 "node",
-                str(SCRIPTS_DIR / "download_and_merge_products_v20.js"),
+                str(SCRIPTS_DIR / "download_and_merge_products_v22.js"),
                 str(search_json),
                 str(core_db_path),
                 "10000",

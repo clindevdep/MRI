@@ -107,6 +107,23 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 
 ## LOG
 
+### 2026-08-04
+{$clindevdep-T470; Claude; 2026-08-04_1548} context purge
+- Event: context purge after preserving v21, implementing and deploying v22 portal-client Excel reconstruction, and correcting the r1 request-header defect in r2.
+- Completed: archived 34 historical searches with checksum; preserved original source/image; unit and live VPN-routed tests passed; deployed healthy `mri:v22-portal-resilience-20260804-r2`; LisDexAmfetamine resumed and began downloading via `portal_api_rebuilt_excel`.
+- Remaining: monitor active LisDexAmfetamine through pipeline completion; full end-to-end workflow test; automatic EU-safe Gluetun VPN rotation; optional VLM PDF-digest extraction.
+- Memory note: `/home/clindevdep/.claude/projects/-home-clindevdep-AI-MRI_v22_portal_resilience_20260804/memory/purge_resume_20260804.md`
+- Git: local commit `5540d43` created on `v21-swe-pk`; push is pending because the SSH key was denied and the GitHub CLI token is invalid.
+
+### 2026-08-04
+{clindevdep-T470; Codex; 2026-08-04_1528} v22 portal-client Excel export resilience
+- Preserved v21 source separately at `/home/clindevdep/AI/MRI_preserved_20260804` and tagged the running image as `mri:preserved-20260804`; the live service was not changed.
+- Exported all 34 historical `search_results.json` files from the persistent data volume to `/home/clindevdep/AI/MRI_search_exports/20260804_pre_v22/search_results_all_runs.tar.gz`, with manifest and SHA-256 checksum.
+- Root cause: the MRI portal's current **Download as excel file** action is no longer a server-side file download. Its Angular client fetches expanded `ProductSearch` OData JSON, creates an XLSX locally with SheetJS, and clicks a Blob URL. Waiting for Playwright's `download` event therefore times out even though the product page/API remain available.
+- v22 adds `download_and_merge_products_v22.js`: it captures the authenticated browser `ProductSearch` response while loading each details page, reproduces the portal's 20-column workbook with ExcelJS, and validates the saved workbook before marking it complete. The old download-event route remains only as a 15-second fallback, with ZIP-signature validation; the unsafe HTML-as-XLSX request fallback is removed.
+- Verification: unit tests passed (row mapping and readable XLSX). A real VPN-routed one-product test for `SE/H/2822/004` completed via `portal_api_rebuilt_excel`, then successfully merged a valid 20-column core workbook.
+- v22 workspace: `/home/clindevdep/AI/MRI_v22_portal_resilience_20260804`. Its code is tested separately and it is ready for a clean, separately tagged image build before any optional deployment; no active container, app volume, or preserved source was modified.
+
 ### 2026-03-24
 {clindevdep-T470; Claude; 2026-03-24_0700} Project initialization
 - Created project structure at ~/AI/MRI/
@@ -265,4 +282,3 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 - Completed: Investigated and fixed Betahistine run being stuck and showing 0 downloads. Resolved zombie process handling in runner.py, folder renaming tracking in tracker.py, and fallback validation in download_and_merge_products_v20.js. Hot-patched container.
 - Remaining TODO: Run end-to-end workflow tests with real data, integrate Gluetun API for automated VPN rotation.
 - Memory Note: /home/clindevdep/.claude/projects/-home-clindevdep-AI/memory/purge_resume_20260604.md
-

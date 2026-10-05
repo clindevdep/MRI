@@ -216,6 +216,18 @@ function createProductFolderName(name, maHolder, doseForm, mrNumber) {
 }
 
 /**
+ * Public Assessment Reports are listed as "<documentType> | <documentName>"
+ * rows; the portal types them "PubAR". The name is also matched as a whole
+ * word so variant labels (PAR / sPAR) still count, without catching product
+ * names that merely start with "par" (Paracetamol, Parecoxib, ...).
+ */
+function isParDocumentLabel(label) {
+  const [type = '', name = ''] = String(label || '').split('|').map(part => part.trim());
+  if (/pubar/i.test(type)) return true;
+  return /(^|[^a-z])s?par([^a-z]|$)/i.test(name);
+}
+
+/**
  * Download PAR documents for a single product using unique identity
  */
 async function downloadProductPARs(product, productIndex, totalProducts, tracker) {
@@ -297,37 +309,56 @@ async function downloadProductPARs(product, productIndex, totalProducts, tracker
       }
 
       // MRI-portal attachments (fallback for SE if no agency PAR found; default path otherwise)
-      const downloadIcons = downloadCount > 0
+      // Each document is a Material list item labelled "<documentType> | <documentName>".
+      // The page toolbar carries an identical "archive" icon for its "Download excel"
+      // action, which serves no file and so used to cost a download timeout per
+      // product, so the scan is scoped to the document list and only PAR/sPAR rows
+      // are clicked (the SPC/PL/Labelling attachments are never fetched).
+      const documentRows = downloadCount > 0
         ? []
-        : await page.locator('mat-icon:has-text("archive")').all();
-      console.log(`   → Found ${downloadIcons.length} documents`);
+        : await page.locator('mat-list-item:has(mat-icon:has-text("archive"))').all();
 
-      for (let i = 0; i < downloadIcons.length; i++) {
+      const parRows = [];
+      for (const row of documentRows) {
+        const label = String(await row.innerText().catch(() => ''))
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (isParDocumentLabel(label)) parRows.push({ row, label });
+      }
+      console.log(`   → Found ${documentRows.length} document(s), ${parRows.length} PAR/sPAR`);
+
+      for (let i = 0; i < parRows.length; i++) {
+        const { row, label } = parRows[i];
         try {
           const downloadPromise = page.waitForEvent('download', { timeout: 20000 });
-          await downloadIcons[i].click();
+          await row.locator('button:has(mat-icon:has-text("archive"))').first().click();
           const download = await downloadPromise;
           const filename = download.suggestedFilename();
 
-          if (filename.endsWith('.xlsx')) {
+          if (filename.toLowerCase().endsWith('.xlsx')) {
             console.log(`      ${i + 1}. Skipped: ${filename} (Excel)`);
-            continue;
-          }
-
-          if (!filename.toUpperCase().includes('PAR')) {
-            console.log(`      ${i + 1}. Skipped: ${filename} (not a PAR)`);
             continue;
           }
 
           const outputPath = path.join(productFolder, filename);
           await download.saveAs(outputPath);
+
+          // Only keep what the portal actually served as a PDF, so a WAF or
+          // error page saved under a .pdf name can never count as a PAR.
+          const signature = fs.readFileSync(outputPath).subarray(0, 4).toString('binary');
+          if (signature !== '%PDF') {
+            fs.unlinkSync(outputPath);
+            console.log(`      ${i + 1}. Skipped: ${filename} (not a PDF)`);
+            continue;
+          }
+
           console.log(`      ${i + 1}. ✅ ${filename}`);
           downloadCount++;
           parFiles.push(filename);
 
           await humanDelay(500, 1500);
         } catch (error) {
-          console.log(`      ${i + 1}. ⚠️  Failed: ${error.message}`);
+          console.log(`      ${i + 1}. ⚠️  Failed (${label.slice(0, 60)}): ${error.message}`);
         }
       }
     } else {

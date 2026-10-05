@@ -128,19 +128,16 @@ export function getStealthBrowserArgs(viewport) {
  * Get realistic HTTP headers that mimic real Chrome browser
  */
 export function getRealisticHeaders() {
+  // These are applied to every request (context- and page-level), not just the
+  // top-level navigation, so navigation-only values must not appear here:
+  // forcing `Sec-Fetch-Dest: document` / `Sec-Fetch-Mode: navigate` and an
+  // HTML-only `Accept` onto the portal's Angular module and OData XHRs leaves
+  // the page on its loading spinner and nothing ever renders.
   return {
     'Accept-Language': 'en-US,en;q=0.9',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-    'Accept-Encoding': 'gzip, deflate, br, zstd',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Site': 'none',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-User': '?1',
-    'Sec-Fetch-Dest': 'document',
     'Sec-Ch-Ua': '"Chromium";v="131", "Not_A Brand";v="24"',
     'Sec-Ch-Ua-Mobile': '?0',
     'Sec-Ch-Ua-Platform': '"Windows"',
-    'Cache-Control': 'max-age=0',
     'DNT': '1'
   };
 }

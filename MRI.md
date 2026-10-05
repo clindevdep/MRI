@@ -97,7 +97,59 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 - [x] 5.11 SWE 2-hop fix — `collectSwedishAgencyPARs()` reads Material tooltip landing URLs (portal → lakemedelsverket facts page) then scans that page for docetp PAR/sPAR PDFs (filtered to PAR/sPAR, English first). LIVE-VERIFIED on mri:v21: SE/H/2048/001/004/005 each download ENG PAR (253KB) + ENG sPAR (29KB) valid PDFs. Diagnostics: `scripts/probe_swe_dom_v1.js`, `scripts/probe_facts_v1.js`. (SE/H/1592/001 → 0: genuine absence, no agency link on its portal page.)
 - [ ] 5.10 (optional) VLM PDF-digest extraction via Full-texts bridge / Legion for robust PK parsing
 
+### Stage 6: v23 — PAR stage restored after portal Angular change
+- [x] 6.1 Diagnose 0-PAR runs (every run since 2026-08-03): root cause is the Solo ID context forcing
+  navigation-only headers (`Sec-Fetch-Dest: document`, `Sec-Fetch-Mode: navigate`,
+  `Upgrade-Insecure-Requests`, HTML-only `Accept`) onto *every* request, including the portal's Angular
+  module + OData XHRs → page never leaves its loading spinner → `text=Documents` matches nothing →
+  "Documents tab not found" → 0 PARs, reported as 614/614 completed with 0 failures. NOT portal blocking,
+  NOT geo (exit was Riga/LV, EU), NOT a missing tab. Same trap v22 documented for the core stage.
+- [x] 6.2 Fix headers in `scripts/src/solo_id_v10.js` + shared `scripts/src/advanced_stealth.js`
+  (`getRealisticHeaders`, also used by automatic-mode search and the legacy core downloader).
+- [x] 6.3 Fix attachment scan: `mat-icon:has-text("archive")` also matched the page toolbar's
+  "Download excel" button (serves no file → a 20s download timeout per product, logged as "Failed").
+  Scan is now scoped to the document list (`mat-list-item`, labelled "<documentType> | <documentName>")
+  and only PubAR/PAR rows are clicked; SPC/PL/Labelling are no longer downloaded just to be discarded.
+  Saved files validated as real `%PDF`.
+- [x] 6.4 Build `mri:v23-par-dom-fix` (442f420d61c4), smoke-test, deploy, live-verify in production.
+- [x] 6.5 **FIXED in v24** (was a pre-existing bug, separate from the PAR fix): `mvtnorm` + `cubature`
+  were MISSING from the v22/v23 images, so `library(PowerTOST)` failed → Sample Size / CVw screening was
+  dead from the 2026-08-04 v22 image until 2026-10-05. Root cause: **PPM no longer publishes
+  bookworm/R-4.2 binaries** — every snapshot (latest, 2026-07-01, 2026-06-01, 2026-03-01) now resolves to
+  `src/contrib`, so mvtnorm (Fortran) and cubature/Rcpp (C++) fell back to a source build and failed in
+  this deliberately compiler-less image, and `install.packages()` only *warns*. R itself never changed
+  (4.2.2 Patched in both v21 and v23). Fix: take the compiled deps from Debian bookworm
+  (`r-cran-mvtnorm` 1.1-3, `r-cran-cubature` 2.0.4.6, `r-cran-rcpp` 1.0.10, `r-cran-jsonlite` 1.8.4 —
+  prebuilt against R 4.2.2, so still NO toolchain) and install only PowerTOST (`NeedsCompilation=no`)
+  from source, plus a build-time assertion that all four load and `CVfromCI` runs.
+- [ ] 6.6 Re-run the molecules that returned 0 PARs under the broken code (Rivaroxaban 614 products,
+  Ketoconazole, Bilastine, Pancreatine, LisDexAmfetamine).
+
 ## Test Results
+- 6.5 LIVE (2026-10-05, `mri:v24-powertost-fix`): build-time assertion printed
+  `R deps OK — PowerTOST 1.5.7 CVfromCI: 0.1929871`; image reports PowerTOST 1.5.7 / mvtnorm 1.1.3 /
+  cubature 2.0.4.6. The **real** chain `Rscript CVw_Screening_v03.R /data/uploads/cvw_smoke.csv <out>`
+  (5-study fixture, AUC+Cmax) returns valid JSON — per-study `CVw_calc` 20-25% with `N-Pwr80%`/`N-Pwr90%`
+  plus the pooled block — both in the image and in the deployed container. The identical command errors
+  with "there is no package called 'mvtnorm'" on v23, so this is a confirmed before/after. (The
+  "sigma based on pe & lower CL more than 10% different" warnings come from the intentionally asymmetric
+  CIs in the synthetic fixture, not from the code.) PAR download re-verified after the v24 cutover:
+  `AT/H/1569/001` → 1 PAR, `AT/H/1561/005` → 0.
+- 6.1-6.4 LIVE (2026-10-05, gluetun exit Riga/LV): PAR stage verified at four levels against the live
+  portal with the 2-product fixture `/data/uploads/par_fix_test.xlsx` — (1) patched scripts mounted into a
+  throwaway container, (2) patched row-scoped selection, (3) the baked `mri:v23-par-dom-fix` image with no
+  mount, (4) inside the deployed production container. Every level: `AT/H/1569/001` → "Found 4 document(s),
+  1 PAR/sPAR" → `PAR_AT_H_1569_001_003_barrierefrei.pdf` (174,061 B, valid `%PDF`, 10 pages, "Public
+  Assessment Report / Scientific discussion"); `AT/H/1561/005` → "Found 3 document(s), 0 PAR/sPAR" → 0 PARs
+  (genuine: it has only SPC/PL/Labelling). Document counts dropped 5→4 and 4→3, confirming the toolbar
+  "Download excel" button is no longer swept into the scan. A 2-product run now takes ~41s instead of
+  burning a 20s dead timeout per product.
+- 6.3 `isParDocumentLabel` discriminator: 12/12 cases pass — PubAR and sPAR variants match; SPC / PL /
+  Labelling / the `PRODUCT | archive Download excel` toolbar row do not; `Paracetamol_500mg_SmPC` and
+  `Parecoxib_SmPC` correctly rejected (word-boundary match, so product names starting with "par" are safe).
+- 6.5 R regression bounded: `library(PowerTOST)` loads in `mri:v21` (has `mvtnorm`, `cubature`, `Rcpp`) and
+  fails identically in `mri:v22-portal-resilience-20260804-r2`, the pre-deploy live container, and
+  `mri:v23-par-dom-fix` — i.e. pre-existing since the v22 build, not introduced by this fix.
 - 5.4/5.7 CVw_Screening_v03.R + wrapper: CVfromCI/sampleN.TOST/CVpooled verified on host (R 4.4.3); per-study CVw calc from CI, reported-vs-calc cross-check, pooled CVw + pooled N by PK; UI records→study_from_row→screening path tested (Pool flag toggles pooling correctly).
 - 5.2/5.3: tracker_stats + is_running unit-tested (terminal status → not-running; with_pars/empty/sources correct).
 - 5.5: SWE link extraction unit-tested (English PAR prioritised, portal-internal links excluded).
@@ -106,6 +158,78 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 - 5.6: aggregation tested on synthetic (dedup, GMR/CI normalisation, pooled CV) + real ketoprofen (empty-CV → 0 studies, no crash).
 
 ## LOG
+
+### 2026-10-05
+{vmi1967850; Claude Opus 5; 2026-10-05_1100} PowerTOST/CVw restored (v24) — PPM stopped shipping R 4.2 binaries
+- Fixed TODO 6.5, the pre-existing breakage found while diagnosing the PAR bug: `library(PowerTOST)` had
+  been failing since the 2026-08-04 image, so the Sample Size / CVw screening tab was dead.
+- ROOT CAUSE (not an R upgrade — R is 4.2.2 Patched in both v21 and v23): Posit Package Manager no longer
+  publishes bookworm/R-4.2 *binaries*. `available.packages()` now returns `src/contrib` for mvtnorm,
+  cubature, Rcpp and PowerTOST on every snapshot tried (latest, 2026-07-01, 2026-06-01, 2026-03-01), and
+  `getOption("pkgType")` is `source`. The image has no gfortran/C++ toolchain by design, so those three
+  compiled packages failed to build — and `install.packages()` only warns, so the August build shipped a
+  silently broken image. Adding the assertion made this reproduce immediately as a hard build failure.
+- FIX: compiled deps now come from Debian bookworm main, which packages them prebuilt against R 4.2.2 —
+  `r-cran-mvtnorm` 1.1-3, `r-cran-cubature` 2.0.4.6, `r-cran-rcpp` 1.0.10, `r-cran-jsonlite` 1.8.4 — so
+  the no-toolchain/fast-build design is preserved (apt is pinned to the Debian 20260316Z snapshot). Only
+  PowerTOST (`NeedsCompilation=no`) is still installed from source. Kept the build-time assertion that all
+  four load and `CVfromCI` computes, so a partial install can never ship quietly again.
+- VERIFIED then DEPLOYED behind hard gates (PowerTOST loads + real CVw chain emits a pooled result + the
+  v23 PAR fix still baked): built `mri:v24-powertost-fix` (5af2a6c462da), recreated the live container,
+  healthy, Streamlit 200. Post-deploy in production: CVw chain returns per-study CVw 20-25% with N at 80/90%
+  power plus the pooled block, and `AT/H/1569/001` still downloads its PAR (AT/H/1561/005 → 0).
+  `docker-mri:latest` retagged to v24. Smoke fixtures kept: `/data/uploads/par_fix_test.xlsx`,
+  `/data/uploads/cvw_smoke.csv`.
+  ROLLBACK: `docker tag mri:v23-par-dom-fix docker-mri:latest && docker rm -f mri` then the same
+  `docker run` with image `mri:v23-par-dom-fix` (PAR fix present, Sample Size still broken).
+- An earlier gate run failed on a bad bind-mount in my own shell command, not the image; the gate
+  correctly refused to deploy and production stayed on v23 throughout.
+
+{vmi1967850; Claude Opus 5; 2026-10-05_1020} PAR downloads restored (v23) — portal header trap + toolbar mis-selection
+- SYMPTOM: mri.clindevdep.com downloaded 0 PAR PDFs in every recent run. Rivaroxaban (2026-10-02, 614
+  products) reported "Completed: 614, Failed: 0, Total PAR documents: 0" and exited 0; each product logged
+  "Documents tab not immediately visible" → "Documents tab not found". Same signature in Ketoconazole
+  (09-29), Bilastine (09-22), Pancreatine (08-10), LisDexAmfetamine (08-03). Regression window pinned by
+  PDF counts per run: last success 2026-07-02 (MelSE4fix, 4 PDFs), first zero 2026-08-03 — i.e. it predates
+  the v22 deploy, so it is the portal's change, not a v22 regression.
+- RULED OUT: portal blocking (no 403/Access Denied, no exit code 3, 0 failures), geo-restriction (gluetun
+  exit was Riga/LV = EU), core stage (614 products merged fine via v22's `portal_api_rebuilt_excel`), and
+  code drift (container `process_molecule_v10.js` md5-identical to the host source).
+- ROOT CAUSE: `createSoloIDBrowser` set context-level `extraHTTPHeaders` containing navigation-only values
+  (`Sec-Fetch-Dest: document`, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Site: none`,
+  `Upgrade-Insecure-Requests`, HTML-only `Accept`). Context headers apply to EVERY request, so the
+  rewritten Angular portal could not fetch its own modules/OData calls and stayed on the loading spinner
+  (`console: ERR_INVALID_ARGUMENT`; DOM had 0 anchors, 0 mat-icons). `text=Documents` therefore matched
+  nothing and the stage recorded "completed, 0 PARs". Proven by probing the same product with a plain
+  context: ProductSearch fires, 11 anchors, 5 archive icons, all 5 documents download as valid PDFs.
+  This is exactly the trap v22 hit and worked around for its own download context only.
+- SECOND DEFECT (found by DOM probe): the attachment scan `mat-icon:has-text("archive")` also matched the
+  page toolbar's "Download excel" button, which serves no file — its click cost a 20s `waitForEvent`
+  timeout on every product (~3.4h on a 614-product run) and was logged as a scary "Failed". Document rows
+  are `mat-list-item`s labelled "<documentType> | <documentName>" (PARs typed `PubAR`), so the scan is now
+  scoped to that list and only PAR/sPAR rows are clicked. Downloaded files are validated as `%PDF` instead
+  of being filtered by filename, which also removes the latent "Paracetamol contains PAR" false positive.
+- NOT a URL problem: the legacy `mri.cts-mrp.eu/portal/details?productnumber=…` redirects to
+  `mri-production.cts-mrp.eu/details?productnumber=…` *preserving the query* and renders fine, so the
+  navigation URL was left unchanged. (An earlier "path is dropped" reading was an artifact of the
+  unrendered broken context.)
+- The OData `Document(documentApiId='…')/Download` endpoint is NOT usable as a plain GET: the portal sends
+  a custom `youdontownmev1` JWT and without it the server kills the stream (curl `http=000` / HTTP-2
+  CANCEL / "socket hang up"); with the token it just returns the SPA shell. Hence the DOM click path, not
+  an API rewrite. Diagnostics kept: `scripts/probe_docs_api_v{1,2,3}.js`, `probe_doc_rows_v1.js`,
+  `probe_url_compare_v1.js`.
+- DEPLOYED: built `mri:v23-par-dom-fix` (442f420d61c4; only the COPY layers rebuilt), smoke-tested
+  (Streamlit health 200, patched code confirmed baked in), recreated the live `mri` container on it —
+  healthy. Also retagged `docker-mri:latest` → v23: it was still pointing at v21 (535ec08), so a
+  compose-driven recreate would have silently regressed the app by two versions.
+  ROLLBACK: `docker tag mri:v22-portal-resilience-20260804-r2 docker-mri:latest && docker rm -f mri` then
+  the same `docker run` with image `mri:v22-portal-resilience-20260804-r2`.
+- Committed `2e5c370` on `v21-swe-pk`. NOT yet pushed (that commit plus August's `568ae61` are both ahead
+  of `origin/v21-swe-pk`).
+- FOUND, NOT FIXED (TODO 6.5): `mvtnorm` + `cubature` are missing from the v22/v23 images so
+  `library(PowerTOST)` fails — Sample Size / CVw screening has been broken since the 2026-08-04 image.
+  `mri:v21` still has them, so the August R-layer rebuild lost them silently (no verification in the
+  Dockerfile). The PAR stage does not use R, so this did not block the deploy.
 
 ### 2026-08-04
 {$clindevdep-T470; Claude; 2026-08-04_1548} context purge

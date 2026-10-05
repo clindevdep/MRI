@@ -17,22 +17,6 @@ st.markdown("""
     [data-testid="stSidebarNav"] li a {
         padding: 0.5rem 1rem;
     }
-    /* Prominent mode selection panel */
-    .mode-panel {
-        background: linear-gradient(135deg, rgba(49,108,244,0.07) 0%, rgba(49,108,244,0.02) 100%);
-        border: 2px solid rgba(49,108,244,0.22);
-        border-radius: 14px;
-        padding: 1.2rem 1.6rem 0.8rem;
-        margin-bottom: 1rem;
-    }
-    .mode-panel [data-testid="stRadio"] > label > div[data-testid="stMarkdownContainer"] p {
-        font-size: 1.15rem !important;
-        font-weight: 700 !important;
-    }
-    .mode-panel [data-baseweb="radio"] > div:last-child > div {
-        font-size: 1.05rem;
-        font-weight: 600;
-    }
 </style>
 """, unsafe_allow_html=True)
 st.title("New Run")
@@ -45,7 +29,6 @@ _MODE_LABELS = {
 }
 
 with st.container(border=False):
-    st.markdown('<div class="mode-panel">', unsafe_allow_html=True)
     st.markdown("### **Source mode**")
     mode = st.radio(
         "Select how to start the pipeline",
@@ -66,7 +49,6 @@ with st.container(border=False):
             'RECOMMENDED</span>',
             unsafe_allow_html=True,
         )
-    st.markdown("</div>", unsafe_allow_html=True)
 
 st.divider()
 

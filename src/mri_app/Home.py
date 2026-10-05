@@ -72,19 +72,26 @@ if not all_options:
     st.info("No runs to display.")
     st.stop()
 
-# Honor selected_run from History page
-default_idx = 0
-if "selected_run" in st.session_state:
-    target = st.session_state.pop("selected_run")
-    names = [name for name, _ in all_options]
-    if target in names:
-        default_idx = names.index(target)
+# Honor a run requested by the New Run / History pages.
+#
+# The selector holds its value under its own key rather than through `index`,
+# because the auto-refresh at the bottom of this page re-runs the script every
+# few seconds: a changing `index` would rebuild the widget and snap the
+# dashboard back to whichever run sorts first, losing the run being watched.
+names = [name for name, _ in all_options]
 
-selected_name = st.selectbox(
-    "Select run",
-    options=[name for name, _ in all_options],
-    index=default_idx,
-)
+requested = st.session_state.pop("selected_run", None)
+if requested in names:
+    st.session_state["run_selector"] = requested
+elif requested is not None:
+    # A run launched moments ago may not be listed yet — retry on the next run.
+    st.session_state["selected_run"] = requested
+
+# Drop a stale selection so the widget cannot be handed a value it no longer offers.
+if st.session_state.get("run_selector") not in names:
+    st.session_state.pop("run_selector", None)
+
+selected_name = st.selectbox("Select run", options=names, key="run_selector")
 selected_run = next(r for name, r in all_options if name == selected_name)
 run_dir: Path = selected_run["path"]
 config = selected_run.get("config", {})

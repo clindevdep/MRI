@@ -50,6 +50,22 @@ def start_pipeline(
     if basic_export:
         cmd += ["--basic-export", str(basic_export)]
 
+    # Make the run discoverable before the orchestrator has started up.
+    # list_runs() ignores a directory until it holds a run_config.json, and the
+    # orchestrator only writes one once it is running — so without this the
+    # just-launched run is still invisible on the dashboard the New Run page
+    # redirects to, and the dashboard silently falls back to another run. The
+    # orchestrator rewrites this file with the authoritative values moments later.
+    config = {
+        "molecule": molecule,
+        "max_products": max_products,
+        "mode": mode,
+        "core_db": str(core_db) if core_db else None,
+        "basic_export": str(basic_export) if basic_export else None,
+        "started_at": datetime.now().isoformat(),
+    }
+    (run_dir / "run_config.json").write_text(json.dumps(config, indent=2))
+
     log_path = run_dir / "pipeline.log"
     log_file = open(log_path, "w")
 

@@ -124,8 +124,23 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
   from source, plus a build-time assertion that all four load and `CVfromCI` runs.
 - [ ] 6.6 Re-run the molecules that returned 0 PARs under the broken code (Rivaroxaban 614 products,
   Ketoconazole, Bilastine, Pancreatine, LisDexAmfetamine).
+- [x] 6.7 **UI (v25, user-reported):** (a) removed the empty blue box between the "New Run" title and the
+  "Source mode" subtitle — a `.mode-panel` `<div>` opened and closed in two separate `st.markdown()` calls
+  can never wrap the radio, so it rendered as an empty bordered box; (b) "Start Pipeline" now leaves the
+  user on the Progress tab **of the run just started** — `start_pipeline` writes `run_config.json` before
+  spawning the orchestrator (previously only `pid`, and `list_runs()` skips dirs without a config, so the
+  new run was invisible and the selection request was discarded), and the run selector keeps its value
+  under its own key instead of an `index` that the 3s auto-refresh kept resetting.
 
 ## Test Results
+- 6.7 LIVE (2026-10-05, `mri:v25-ui-fixes`): New Run page rendered headlessly (Playwright against a
+  throwaway container on the patched source, then again against the deployed container) — **0 elements
+  carry `.mode-panel`** and the DOM reads "New Run | Source mode | Select how to start the pipeline |
+  Basic …", with the radio options, captions, RECOMMENDED badge and upload form unchanged. Run-visibility
+  fix tested directly: `run_config.json` exists the moment `start_pipeline` returns and `list_runs()`
+  reports the new run immediately (previously it appeared only once the orchestrator had booted).
+  Deploy gates all passed: no `mode-panel` refs, early `run_config` write present, keyed `run_selector`
+  present, `isParDocumentLabel`=2, 0 `Sec-Fetch` header keys, PowerTOST loads, Streamlit health 200.
 - 6.5 LIVE (2026-10-05, `mri:v24-powertost-fix`): build-time assertion printed
   `R deps OK — PowerTOST 1.5.7 CVfromCI: 0.1929871`; image reports PowerTOST 1.5.7 / mvtnorm 1.1.3 /
   cubature 2.0.4.6. The **real** chain `Rscript CVw_Screening_v03.R /data/uploads/cvw_smoke.csv <out>`
@@ -160,6 +175,32 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 ## LOG
 
 ### 2026-10-05
+{vmi1967850; Claude Opus 5; 2026-10-05_1200} UI fixes (v25) — empty mode panel removed; Start Pipeline keeps its run
+- Two user-reported behaviours on the New Run page (screenshot supplied via `~/AI/Screenshots`).
+- (a) EMPTY BLUE BOX between the "New Run" title and the "Source mode" subtitle: `.mode-panel` was opened
+  with `st.markdown('<div class="mode-panel">')` and closed by a *separate* `st.markdown('</div>')`.
+  Streamlit renders each markdown call as its own element, so the div was emitted and closed on the spot —
+  it never wrapped the radio and simply painted an empty bordered box. Removed the wrapper and its CSS.
+  The two descendant rules meant to enlarge the mode labels were scoped under `.mode-panel`, so they had
+  never applied to anything; dropping them changes nothing on screen (user chose to leave the labels plain).
+- (b) "Start Pipeline" DID NOT LAND ON THE NEW RUN. The tab was never the problem: Progress is already the
+  first `st.tabs` entry, and Streamlit 1.60 has no API to select a tab anyway. The run itself was not
+  selectable — `start_pipeline` wrote only a `pid`, while `list_runs()` skips any directory without a
+  `run_config.json`, and that file is written later by the orchestrator once it boots. So the just-launched
+  run was missing from the dashboard, `st.session_state.pop("selected_run")` discarded the request, and the
+  view fell back to whichever run sorted first. `start_pipeline` now writes `run_config.json` itself before
+  spawning the orchestrator (which rewrites it with authoritative values), and Home keeps the request in
+  session state until the run actually appears.
+- Also fixed while in there: the run selector was driven by `index` with no `key`. Home re-runs every 3s
+  while a pipeline is active, and a changing `index` rebuilds the widget — which snapped the dashboard back
+  to the first run mid-run. It now holds its value under `key="run_selector"`.
+- VERIFIED then DEPLOYED behind gates (no `mode-panel` refs, early `run_config` write, keyed selector, PAR
+  fix intact, 0 `Sec-Fetch` keys, PowerTOST loads, Streamlit 200): built `mri:v25-ui-fixes` (29de6bc0139b),
+  recreated the live container, healthy. Post-deploy render of the live page confirms 0 `.mode-panel`
+  elements. `docker-mri:latest` retagged to v25. Commit `33aa049` pushed.
+  ROLLBACK: `docker tag mri:v24-powertost-fix docker-mri:latest && docker rm -f mri` then the same
+  `docker run` with image `mri:v24-powertost-fix`.
+
 {vmi1967850; Claude Opus 5; 2026-10-05_1100} PowerTOST/CVw restored (v24) — PPM stopped shipping R 4.2 binaries
 - Fixed TODO 6.5, the pre-existing breakage found while diagnosing the PAR bug: `library(PowerTOST)` had
   been failing since the 2026-08-04 image, so the Sample Size / CVw screening tab was dead.

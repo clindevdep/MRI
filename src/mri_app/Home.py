@@ -12,7 +12,8 @@ import pandas as pd
 import streamlit as st
 
 from mri_app.downloads import ensure_directory_zip
-from mri_app.runner import list_runs, is_running, stop_pipeline
+from mri_app.run_controls import SCOPE_LABELS, continue_controls
+from mri_app.runner import RESULT_STATES, list_runs, is_running, stop_pipeline
 from mri_app.sample_size import run_cvw_screening, study_from_row, SampleSizeError
 from mri_app.tracker import read_status, tracker_stats, find_trackers, read_log_tail
 
@@ -112,8 +113,18 @@ elif step == "failed":
     st.markdown(f"**Status:** :red[Failed] — {status.get('error', '')}")
 elif step == "blocked":
     st.markdown(f"**Status:** :orange[Blocked] — {status.get('error', '')}")
+elif step == "core_complete":
+    st.markdown(f"**Status:** :blue[Core database ready] — {status.get('detail') or ''}")
+elif step == "batch_complete":
+    st.markdown(f"**Status:** :blue[Batch complete] — {status.get('detail') or ''}")
 else:
     st.markdown(f"**Status:** :gray[{step}]")
+
+_par_limit = int(config.get("par_limit") or 0)
+st.caption(
+    f"Scope: {SCOPE_LABELS.get(config.get('scope', 'full'), 'Full run')} · "
+    f"PAR limit this session: {_par_limit if _par_limit > 0 else 'unlimited'}"
+)
 
 # Tabs — Progress first so the app opens on live progress
 tab_progress, tab_results, tab_samplesize = st.tabs(["Progress", "Results", "Sample Size"])
@@ -139,7 +150,8 @@ with tab_progress:
     else:
         extraction_frac = 0.0
 
-    if step_name == "complete":
+    if step_name in ("complete", "core_complete"):
+        # core_complete: a core-only run has nothing left to do in its scope.
         overall = 1.0
     else:
         overall = 0.45 * core_frac + 0.45 * par_frac + 0.10 * extraction_frac
@@ -197,6 +209,14 @@ with tab_progress:
             if st.button("Refresh"):
                 st.rerun()
 
+    # Continue a resumable run: next PAR batch, PARs after a core-only run,
+    # or a resume after a block/failure.
+    if not running and step != "complete" and step != "unknown":
+        if continue_controls(run_dir, config, step, key=f"dash_continue:{run_dir.name}"):
+            st.session_state["selected_run"] = run_dir.name
+            time.sleep(1)
+            st.rerun()
+
     # Log output
     st.divider()
     st.subheader("Pipeline Log")
@@ -213,9 +233,14 @@ with tab_results:
     molecule_dir = per_proc if per_proc.is_dir() else run_dir / molecule
     collection = run_dir / f"{molecule}_PAR_collection"
 
-    if step != "complete":
+    if step not in RESULT_STATES:
         st.info("Results will appear here once the pipeline completes.")
     else:
+        if step == "core_complete":
+            st.info("Core base generation only — the Core Database is ready; no PARs yet.")
+        elif step == "batch_complete":
+            st.info("Partial results: this run stopped at its PAR batch limit. "
+                    "Continue it from the Progress tab to download the next batch.")
         with st.expander("Run Configuration", expanded=False):
             st.json(config)
 

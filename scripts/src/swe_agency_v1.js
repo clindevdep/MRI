@@ -173,13 +173,23 @@ function safeFilename(url, index) {
  * Download the given agency PAR links into productFolder using the stealth
  * context's request (so cookies / VPN exit / fingerprint are preserved).
  * Only bodies that are real PDFs (start with "%PDF") are saved.
- * Returns { count, files }.
+ *
+ * `budget` (optional) is the caller's per-session PAR limit: download stops
+ * once `budget.exhausted()` is true, and every saved file is handed to
+ * `budget.register(outPath)` so it can be counted.
+ * Returns { count, files, truncated } — `truncated` means links were left
+ * undownloaded because the budget ran out.
  */
-export async function downloadAgencyPARs(context, links, productFolder) {
+export async function downloadAgencyPARs(context, links, productFolder, budget = null) {
   fs.mkdirSync(productFolder, { recursive: true });
   const files = [];
+  let truncated = false;
 
   for (let i = 0; i < links.length; i++) {
+    if (budget && budget.exhausted()) {
+      truncated = true;
+      break;
+    }
     const { url } = links[i];
     try {
       const response = await context.request.get(url, { timeout: 30000 });
@@ -195,12 +205,14 @@ export async function downloadAgencyPARs(context, links, productFolder) {
       const filename = safeFilename(url, i + 1);
       const outPath = path.join(productFolder, filename);
       fs.writeFileSync(outPath, body);
-      console.log(`      ✅ [SWE] ${filename} (${(body.length / 1024).toFixed(0)} KB)`);
+      const isNew = budget ? budget.register(outPath) : true;
+      console.log(`      ✅ [SWE] ${filename} (${(body.length / 1024).toFixed(0)} KB)` +
+        `${isNew ? '' : ' (same document already downloaded — not counted)'}`);
       files.push(filename);
     } catch (err) {
       console.log(`      ⚠️  Agency download failed: ${err.message}`);
     }
   }
 
-  return { count: files.length, files };
+  return { count: files.length, files, truncated };
 }

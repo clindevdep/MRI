@@ -6,13 +6,22 @@
  * Saves to: {run_folder}/{molecule}/{ProductName}/xxx.pdf
  *
  * Usage:
- *   node process_molecule_v10.js --core <xlsx> --molecule <name> --max <n>
+ *   node process_molecule_v10.js --core <xlsx> --molecule <name> --max <n> [--par-limit <n>]
  *   node process_molecule_v10.js <molecule> [max_products]   (legacy)
+ *
+ * --par-limit <n>  Stop the session once <n> new, distinct PAR PDFs have been
+ *                  saved (0 = unlimited, the default). "Distinct" is by file
+ *                  content (SHA-256): strengths of one procedure often share the
+ *                  same PAR, and re-saving a document already on disk does not
+ *                  count. Exits with code 4 when the limit stops the session
+ *                  while products are still pending, so the run can be resumed
+ *                  for the next batch from the tracker.
  */
 
 import { chromium } from 'playwright';
 import { createSoloIDBrowser, humanDelay, humanClick } from './src/solo_id_v10.js';
 import { getRMS, isSwedishRMS, collectSwedishAgencyPARs, downloadAgencyPARs } from './src/swe_agency_v1.js';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
@@ -26,7 +35,7 @@ const __dirname = dirname(__filename);
 
 function parseArgs() {
   const args = process.argv.slice(2);
-  const parsed = { core: null, molecule: null, max: 10000 };
+  const parsed = { core: null, molecule: null, max: 10000, parLimit: 0 };
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--core' && args[i + 1]) {
@@ -35,6 +44,8 @@ function parseArgs() {
       parsed.molecule = args[++i];
     } else if (args[i] === '--max' && args[i + 1]) {
       parsed.max = parseInt(args[++i]) || 10000;
+    } else if (args[i] === '--par-limit' && args[i + 1]) {
+      parsed.parLimit = Math.max(0, parseInt(args[++i]) || 0);
     } else if (!args[i].startsWith('--') && !parsed.molecule) {
       // Legacy positional: first non-flag = molecule
       parsed.molecule = args[i];
@@ -52,6 +63,10 @@ const ARGS = parseArgs();
 const MOLECULE = ARGS.molecule;
 const MAX_PRODUCTS = ARGS.max;
 const CORE_DB_PATH = ARGS.core;
+const PAR_LIMIT = ARGS.parLimit;
+
+// Exit code the orchestrator reads as "session PAR limit reached, work remains".
+const EXIT_PAR_LIMIT = 4;
 
 if (!MOLECULE) {
   console.log('Usage: node process_molecule_v10.js --core <xlsx> --molecule <name> --max <n>');
@@ -101,6 +116,49 @@ function saveTracker(tracker) {
   tracker.updated_at = new Date().toISOString();
   fs.mkdirSync(path.dirname(TRACKER_PATH), { recursive: true });
   fs.writeFileSync(TRACKER_PATH, JSON.stringify(tracker, null, 2));
+}
+
+// ── Session PAR budget ───────────────────────────────────────────────────
+
+function sha256File(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function listPdfs(dir) {
+  if (!fs.existsSync(dir)) return [];
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...listPdfs(full));
+    else if (entry.name.toLowerCase().endsWith('.pdf')) out.push(full);
+  }
+  return out;
+}
+
+/**
+ * Counts distinct PAR PDFs saved during this session against PAR_LIMIT.
+ * Documents already on disk when the session starts (earlier batches) are
+ * known up front, so only genuinely new documents use up the budget.
+ */
+function createParBudget(limit) {
+  const known = new Set();
+  for (const pdf of listPdfs(MOLECULE_FOLDER)) {
+    try { known.add(sha256File(pdf)); } catch { /* unreadable file: ignore */ }
+  }
+  let newCount = 0;
+  return {
+    limit,
+    knownAtStart: known.size,
+    get newCount() { return newCount; },
+    exhausted() { return limit > 0 && newCount >= limit; },
+    register(filePath) {
+      const hash = sha256File(filePath);
+      if (known.has(hash)) return false;
+      known.add(hash);
+      newCount++;
+      return true;
+    },
+  };
 }
 
 // ── Core database reader ─────────────────────────────────────────────────
@@ -230,7 +288,7 @@ function isParDocumentLabel(label) {
 /**
  * Download PAR documents for a single product using unique identity
  */
-async function downloadProductPARs(product, productIndex, totalProducts, tracker) {
+async function downloadProductPARs(product, productIndex, totalProducts, tracker, budget) {
   const entry = tracker.products[product.procedure_code];
   console.log(`\n[${productIndex}/${totalProducts}] 🎯 Processing: ${product.procedure_code}`);
   console.log(`   Product: ${product.product_name}`);
@@ -258,6 +316,8 @@ async function downloadProductPARs(product, productIndex, totalProducts, tracker
 
   let downloadCount = 0;
   const parFiles = [];
+  // Set when the session PAR limit leaves some of this product's PARs undownloaded.
+  let truncated = false;
 
   try {
     const url = `https://mri.cts-mrp.eu/portal/details?productnumber=${encodeURIComponent(product.procedure_code)}`;
@@ -299,7 +359,9 @@ async function downloadProductPARs(product, productIndex, totalProducts, tracker
         const agencyLinks = await collectSwedishAgencyPARs(context, page);
         console.log(`   → Found ${agencyLinks.length} candidate agency PAR link(s)`);
         if (agencyLinks.length > 0) {
-          const { count, files } = await downloadAgencyPARs(context, agencyLinks, productFolder);
+          const { count, files, truncated: agencyTruncated } =
+            await downloadAgencyPARs(context, agencyLinks, productFolder, budget);
+          if (agencyTruncated) truncated = true;
           if (count > 0) {
             downloadCount += count;
             parFiles.push(...files);
@@ -314,7 +376,7 @@ async function downloadProductPARs(product, productIndex, totalProducts, tracker
       // action, which serves no file and so used to cost a download timeout per
       // product, so the scan is scoped to the document list and only PAR/sPAR rows
       // are clicked (the SPC/PL/Labelling attachments are never fetched).
-      const documentRows = downloadCount > 0
+      const documentRows = (downloadCount > 0 || truncated)
         ? []
         : await page.locator('mat-list-item:has(mat-icon:has-text("archive"))').all();
 
@@ -328,6 +390,10 @@ async function downloadProductPARs(product, productIndex, totalProducts, tracker
       console.log(`   → Found ${documentRows.length} document(s), ${parRows.length} PAR/sPAR`);
 
       for (let i = 0; i < parRows.length; i++) {
+        if (budget.exhausted()) {
+          truncated = true;
+          break;
+        }
         const { row, label } = parRows[i];
         try {
           const downloadPromise = page.waitForEvent('download', { timeout: 20000 });
@@ -352,7 +418,8 @@ async function downloadProductPARs(product, productIndex, totalProducts, tracker
             continue;
           }
 
-          console.log(`      ${i + 1}. ✅ ${filename}`);
+          const isNew = budget.register(outputPath);
+          console.log(`      ${i + 1}. ✅ ${filename}${isNew ? '' : ' (same document already downloaded — not counted)'}`);
           downloadCount++;
           parFiles.push(filename);
 
@@ -365,10 +432,20 @@ async function downloadProductPARs(product, productIndex, totalProducts, tracker
       console.log(`   ⚠️  Documents tab not found`);
     }
 
-    // Update tracker
-    entry.status = 'completed';
     entry.par_count = downloadCount;
     entry.par_files = parFiles;
+
+    if (truncated) {
+      // Leave the product pending so the next session picks it up again; the
+      // PARs already saved are re-fetched there but, being known, not recounted.
+      entry.status = 'pending';
+      entry.last_error = 'Session PAR limit reached part-way through this product';
+      console.log(`   ⏸️  Session PAR limit reached — ${downloadCount} saved, rest left for the next session`);
+      return downloadCount;
+    }
+
+    // Update tracker
+    entry.status = 'completed';
     entry.completed_at = new Date().toISOString();
     entry.last_error = null;
 
@@ -405,6 +482,7 @@ async function main() {
   console.log(`═══════════════════════════════════════════════════════`);
   console.log(`  Molecule: ${MOLECULE}`);
   console.log(`  Max products: ${MAX_PRODUCTS}`);
+  console.log(`  PAR limit (this session): ${PAR_LIMIT > 0 ? PAR_LIMIT : 'unlimited'}`);
   console.log(`  Core DB: ${CORE_DB_PATH || '(auto-detect)'}`);
   console.log(`  Run folder: ${RUN_FOLDER}`);
   console.log(`  Output: ${MOLECULE_FOLDER}`);
@@ -453,13 +531,19 @@ async function main() {
     return;
   }
 
+  const budget = createParBudget(PAR_LIMIT);
+  if (PAR_LIMIT > 0) {
+    console.log(`🔢 Session PAR limit: ${PAR_LIMIT} new distinct PAR PDF(s) (${budget.knownAtStart} already on disk)\n`);
+  }
+
   let totalPARs = 0;
   const productsWithPARs = [];
   let consecutiveFailures = 0;
 
   for (let i = 0; i < pending.length; i++) {
+    if (budget.exhausted()) break;
     const product = pending[i];
-    const parCount = await downloadProductPARs(product, i + 1, pending.length, tracker);
+    const parCount = await downloadProductPARs(product, i + 1, pending.length, tracker, budget);
 
     if (parCount > 0) {
       totalPARs += parCount;
@@ -490,9 +574,17 @@ async function main() {
   console.log(`  Completed: ${allCompleted}`);
   console.log(`  Failed: ${allFailed}`);
   console.log(`  Total PAR documents: ${allPARs}`);
+  console.log(`  New distinct PARs this session: ${budget.newCount}${PAR_LIMIT > 0 ? ` (limit ${PAR_LIMIT})` : ''}`);
   console.log(`  Tracker: ${TRACKER_PATH}`);
   console.log(`  Output: ${MOLECULE_FOLDER}`);
   console.log(`═══════════════════════════════════════════════════════\n`);
+
+  const remaining = Object.values(tracker.products).filter(p => p.status !== 'completed').length;
+  if (budget.exhausted() && remaining > 0) {
+    console.log(`⏸️  Session PAR limit of ${PAR_LIMIT} reached — ${remaining} product(s) left for the next session.\n`);
+    saveTracker(tracker);
+    process.exit(EXIT_PAR_LIMIT);
+  }
 }
 
 main().catch(error => {

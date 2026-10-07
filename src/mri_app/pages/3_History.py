@@ -1,7 +1,8 @@
 """History — list all past runs."""
 
 import streamlit as st
-from mri_app.runner import list_runs
+from mri_app.run_controls import SCOPE_LABELS, continue_controls
+from mri_app.runner import RESULT_STATES, list_runs
 
 st.set_page_config(page_title="History — MRI", page_icon="📜", layout="wide")
 
@@ -50,6 +51,12 @@ for run in runs:
     elif step == "blocked":
         icon = "🟠"
         label = "Blocked"
+    elif step == "core_complete":
+        icon = "🗂️"
+        label = "Core database ready"
+    elif step == "batch_complete":
+        icon = "⏸️"
+        label = "Batch complete — more to download"
     else:
         icon = "⚪"
         label = step
@@ -60,12 +67,22 @@ for run in runs:
         col2.markdown(f"**Mode:** {mode}")
         col3.markdown(f"**Started:** {started}")
 
+        scope = SCOPE_LABELS.get(config.get("scope", "full"), "Full run")
+        par_limit = int(config.get("par_limit") or 0)
+        sessions = len(config.get("sessions", [])) or 1
+        st.caption(
+            f"Scope: {scope} · PAR limit (last session): "
+            f"{par_limit if par_limit > 0 else 'unlimited'} · sessions: {sessions}"
+        )
+        if status.get("detail") and step in RESULT_STATES:
+            st.caption(status["detail"])
+
         if error:
             st.error(error)
 
         bcol1, bcol2, bcol3 = st.columns(3)
 
-        if step == "complete":
+        if step in RESULT_STATES:
             if bcol1.button("View Results", key=f"view_{run['name']}"):
                 st.session_state["selected_run"] = run["name"]
                 st.switch_page("Home.py")
@@ -76,13 +93,7 @@ for run in runs:
                 st.switch_page("Home.py")
 
         if not running and step != "complete":
-            if bcol3.button("Resume", key=f"resume_{run['name']}"):
-                from mri_app.runner import start_pipeline
-
-                pid = start_pipeline(
-                    run_dir=run["path"],
-                    molecule=molecule,
-                    mode="resume",
-                )
-                st.success(f"Resumed (PID {pid})")
-                st.rerun()
+            st.divider()
+            if continue_controls(run["path"], config, step, key=f"resume_{run['name']}"):
+                st.session_state["selected_run"] = run["name"]
+                st.switch_page("Home.py")

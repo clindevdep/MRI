@@ -3,6 +3,7 @@
 import re
 
 import streamlit as st
+from mri_app.run_controls import par_limit_input, scope_switch
 from mri_app.runner import make_run_dir, save_upload, start_pipeline
 
 st.set_page_config(page_title="New Run — MRI", page_icon="🔍", layout="wide")
@@ -94,6 +95,26 @@ elif mode == "full":
 
 st.divider()
 
+# Run scope + PAR batch size
+st.markdown("### **Run scope**")
+if mode == "full":
+    # An uploaded Core Database already is the core base — nothing to generate.
+    scope = scope_switch("new_run_scope", default="full", disabled=True, label_visibility="collapsed")
+    st.caption("A Core Database upload always runs in full (the core base already exists).")
+else:
+    scope = scope_switch("new_run_scope", default="full", label_visibility="collapsed")
+    if scope == "core":
+        st.caption(
+            "Stops once the Core Database is built — no PAR downloads or extraction. "
+            "Continue the run later from the dashboard or History to download its PARs."
+        )
+    else:
+        st.caption("Core Database → PAR downloads → bioequivalence extraction.")
+
+par_limit = par_limit_input("new_run_par_limit") if scope == "full" else 0
+
+st.divider()
+
 # Launch
 can_start = bool(molecule)
 if mode in ("basic", "full") and not uploaded_file:
@@ -120,6 +141,8 @@ if st.button("Start Pipeline", type="primary", disabled=not can_start):
             max_products=max_products,
             core_db=core_db,
             basic_export=basic_export,
+            scope=scope,
+            par_limit=par_limit,
         )
 
     st.session_state["selected_run"] = run_dir.name

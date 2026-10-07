@@ -31,10 +31,17 @@ def start_pipeline(
     max_products: int = 10000,
     core_db: Path | None = None,
     basic_export: Path | None = None,
+    scope: str = "full",
+    par_limit: int = 0,
 ) -> int:
     """
     Launch the orchestrator as a background subprocess.
     Returns the PID.
+
+    scope:     "full" (core DB → PARs → BE extraction) or "core" (core
+               database generation only).
+    par_limit: stop the PAR stage after this many new distinct PAR PDFs in
+               this session; 0 = unlimited. Resume the run for the next batch.
     """
     cmd = [
         "python3",
@@ -43,6 +50,8 @@ def start_pipeline(
         "--molecule", molecule,
         "--mode", mode,
         "--max-products", str(max_products),
+        "--scope", scope,
+        "--par-limit", str(max(0, int(par_limit or 0))),
     ]
 
     if core_db:
@@ -56,15 +65,44 @@ def start_pipeline(
     # just-launched run is still invisible on the dashboard the New Run page
     # redirects to, and the dashboard silently falls back to another run. The
     # orchestrator rewrites this file with the authoritative values moments later.
-    config = {
-        "molecule": molecule,
-        "max_products": max_products,
-        "mode": mode,
-        "core_db": str(core_db) if core_db else None,
-        "basic_export": str(basic_export) if basic_export else None,
-        "started_at": datetime.now().isoformat(),
-    }
-    (run_dir / "run_config.json").write_text(json.dumps(config, indent=2))
+    # A resumed run already has its config, which the orchestrator extends —
+    # overwriting it here would lose the run's original source mode and inputs.
+    config_path = run_dir / "run_config.json"
+    if mode != "resume" or not config_path.exists():
+        config = {
+            "molecule": molecule,
+            "max_products": max_products,
+            "mode": mode,
+            "core_db": str(core_db) if core_db else None,
+            "basic_export": str(basic_export) if basic_export else None,
+            "scope": scope,
+            "par_limit": par_limit,
+            "started_at": datetime.now().isoformat(),
+        }
+        config_path.write_text(json.dumps(config, indent=2))
+
+    # Clear a terminal status left by the previous session of a resumed run,
+    # otherwise is_running() reports the run as finished until the
+    # orchestrator writes its first status. The step being replaced is kept as
+    # "resumed_from": the orchestrator needs it (core_complete → go to PARs).
+    status_path = run_dir / "status.json"
+    resumed_from = None
+    if mode == "resume" and status_path.exists():
+        try:
+            previous = json.loads(status_path.read_text())
+            resumed_from = previous.get("resumed_from") if previous.get("step") == "starting" \
+                else previous.get("step")
+        except (json.JSONDecodeError, OSError):
+            pass
+    status_path.write_text(json.dumps({
+        "step": "starting",
+        "step_number": 0,
+        "total_steps": 3,
+        "detail": None,
+        "updated_at": datetime.now().isoformat(),
+        "error": None,
+        "resumed_from": resumed_from,
+    }, indent=2))
 
     log_path = run_dir / "pipeline.log"
     log_file = open(log_path, "w")
@@ -85,7 +123,13 @@ def start_pipeline(
 # Statuses the orchestrator writes as its final action for a run. Once one of
 # these is present, the run is finished regardless of PID/zombie state — this
 # is authoritative and prevents the UI "running" spinner from sticking forever.
-TERMINAL_STATES = {"complete", "failed", "blocked"}
+#
+# core_complete:  a "Core base generation only" run finished; resumable to fetch PARs.
+# batch_complete: a session reached its PAR limit; resumable for the next batch.
+TERMINAL_STATES = {"complete", "failed", "blocked", "core_complete", "batch_complete"}
+
+# Terminal states whose outputs are worth showing on the Results tab.
+RESULT_STATES = {"complete", "core_complete", "batch_complete"}
 
 
 def is_running(run_dir: Path) -> bool:

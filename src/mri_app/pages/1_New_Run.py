@@ -99,17 +99,18 @@ st.divider()
 st.markdown("### **Run scope**")
 if mode == "full":
     # An uploaded Core Database already is the core base — nothing to generate.
-    scope = scope_switch("new_run_scope", default="full", disabled=True, label_visibility="collapsed")
-    st.caption("A Core Database upload always runs in full (the core base already exists).")
+    scope = scope_switch("new_run_scope", disabled=True)
+    st.caption("**Full run** — a Core Database upload always runs in full (the core base already exists).")
 else:
-    scope = scope_switch("new_run_scope", default="full", label_visibility="collapsed")
+    scope = scope_switch("new_run_scope")
     if scope == "core":
         st.caption(
-            "Stops once the Core Database is built — no PAR downloads or extraction. "
-            "Continue the run later from the dashboard or History to download its PARs."
+            "**Core base generation only** — stops once the Core Database is built; no PAR "
+            "downloads or extraction. Continue the run later from the dashboard or History "
+            "to download its PARs."
         )
     else:
-        st.caption("Core Database → PAR downloads → bioequivalence extraction.")
+        st.caption("**Full run** — Core Database → PAR downloads → bioequivalence extraction.")
 
 par_limit = par_limit_input("new_run_par_limit") if scope == "full" else 0
 

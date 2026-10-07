@@ -11,52 +11,30 @@ SCOPE_LABELS = {
     "core": "Core base generation only",
 }
 
-DEFAULT_BATCH_SIZE = 10
-
-
-def scope_switch(
-    key: str,
-    default: str = "full",
-    disabled: bool = False,
-    label_visibility: str = "visible",
-) -> str:
-    """Two-way switch between a full run and core database generation only."""
-    choice = st.segmented_control(
-        "Run scope",
-        options=list(SCOPE_LABELS),
-        format_func=SCOPE_LABELS.get,
-        default=default,
-        required=True,
+def scope_switch(key: str, default: str = "full", disabled: bool = False) -> str:
+    """On/off switch: off = full run (default), on = core database generation only."""
+    core_only = st.toggle(
+        SCOPE_LABELS["core"],
+        value=default == "core",
         disabled=disabled,
-        label_visibility=label_visibility,
         key=key,
+        help="Off: full run (Core Database → PAR downloads → bioequivalence extraction). "
+             "On: stop once the Core Database is built.",
     )
-    return choice or default
+    return "core" if core_only else "full"
 
 
 def par_limit_input(key: str, default: int = 0) -> int:
-    """PAR batch limit: 0 (unlimited) unless the user switches the limit on."""
-    limited = st.toggle(
-        "Limit PAR downloads per session",
-        value=default > 0,
-        key=f"{key}:on",
-        help="Unlimited by default. When on, the session stops after this many new, "
-             "distinct PAR PDFs (identical documents shared by several strengths count "
-             "once) and the run can be resumed later for the next batch.",
-    )
-    if not limited:
-        st.caption("PAR downloads: **unlimited** — all products are processed in this session.")
-        return 0
+    """PAR batch limit for this session; 0 = unlimited."""
     limit = st.number_input(
-        "PAR PDFs to download in this session",
-        min_value=1,
-        value=default if default > 0 else DEFAULT_BATCH_SIZE,
+        "PAR PDF limit for this session (0 = unlimited)",
+        min_value=0,
+        value=max(0, int(default or 0)),
         step=1,
-        key=f"{key}:n",
-    )
-    st.caption(
-        f"The session ends after **{int(limit)}** new PAR PDF(s). Resume the run from "
-        "the dashboard or History to download the next batch."
+        key=key,
+        help="The session stops after this many new, distinct PAR PDFs (identical "
+             "documents shared by several strengths count once). Resume the run later "
+             "to download the next batch. 0 downloads everything.",
     )
     return int(limit)
 

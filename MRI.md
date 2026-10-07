@@ -214,6 +214,29 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 ## LOG
 
 ### 2026-10-07
+{vmi1967850; Claude Opus 5; 2026-10-07_1615} context purge — verified, handoff corrected
+- Event: `/purge` re-run 10 minutes after the 16:05 purge. Nothing had changed in between, so no duplicate
+  note/commit was created: verified instead that all purge steps were already complete — mem0 holds today's
+  v26 summaries, `purge_resume_20261007.md` exists in the git-toplevel slug dir with its MEMORY.md pointer,
+  the 16:05 log entry is present, and commit `9e696fa` + tag `v25-stable` are on the remote (remote
+  `refs/heads/v26-par-batches` == local HEAD).
+- CORRECTED two inaccuracies in the resume note rather than re-running the steps:
+  - Its top pending item, "look at the newest screenshot and act on it", was already done. The newest file
+    (`~/AI/Screenshots/Screenshot 2026-10-07 113735.png`, 11:37) shows the **pre-`d700dbb`** UI — segmented
+    control for Run scope plus a "Limit PAR downloads per session" toggle — i.e. exactly the feedback that
+    the 11:30 round already applied (`run_controls.py` now uses `st.toggle` + `st.number_input`, baked into
+    the live `mri:v26-par-batches` 40e96137cdc5). Flagged as DONE so the next session does not redo it.
+  - It omitted genuinely pending work: `Ketoconazole_v003_20261007_115001` is `batch_complete` with
+    `par_limit: 1` — 1 PAR counted, **16 products still pending**, resumable via "Download next batch".
+    Incidentally a clean real-world confirmation of v26: `run_config.json` records both sessions (`core`,
+    then `resume`/`full` limit 1) and the one counted PAR sits on disk under two filenames, i.e. the
+    SHA-256 dedup counting a shared document once.
+- State at purge: live `mri:v26-par-batches` healthy, Streamlit 200, **no pipeline running** (an earlier
+  `/proc` scan counted 4 "orchestrator" hits, but those were the scanning shell itself).
+- Clipboard copy of the resume prompt is not possible on this headless VPS (no `DISPLAY`/`WAYLAND_DISPLAY`;
+  `wl-copy` fails on `/dev/tty`); the prompt is saved at `/tmp/mri_resume_prompt.txt` instead.
+- Memory note: /home/clindevdep/.claude/projects/-home-clindevdep-AI-MRI_v22_portal_resilience_20260804/memory/purge_resume_20261007.md
+
 {vmi1967850; Claude Opus 5.5; 2026-10-07_1605} context purge
 - Event: context purge after v26 delivery.
 - Completed: v26 scope switch ("Core base generation only", off = Full run) + per-session PAR limit

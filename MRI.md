@@ -22,7 +22,17 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 - **Subdomain:** mri.clindevdep.com (Traefik + OAuth)
 - **Data:** Persistent volume at `/home/clindevdep/docker/appdata/mri/`
 
-## Rollback (v20 stable → v21 work)
+## Rollback (v26 → v25) — current
+- **Git:** pre-v26 state tagged `v25-stable` (commit `7e4c549`, branch `v21-swe-pk`); v26 work on branch
+  `v26-par-batches`. Source snapshot: `/home/clindevdep/AI/MRI_backups/mri_v25-stable_7e4c549_20261007.tar.gz`.
+- **Image:** `mri:v25-stable-rollback` (= `mri:v25-ui-fixes` @ `29de6bc0139b`). Live v26 = `mri:v26-par-batches`.
+- **Revert container** (`DOCKER_HOST=unix:///var/run/docker.sock`; check no run is active first):
+  `docker tag mri:v25-stable-rollback docker-mri:latest && docker rm -f mri && docker run -d --name mri --network container:gluetun --restart unless-stopped --security-opt no-new-privileges:true -v /home/clindevdep/docker/appdata/mri:/data -e TZ=Europe/Berlin -e ENABLE_PROXY=false --label com.docker.compose.project=docker --label com.docker.compose.service=mri mri:v25-stable-rollback`
+- Data compatibility: v26 only *adds* fields (`scope`, `par_limit`, `sessions`, `resumed_from`) and two
+  statuses (`core_complete`, `batch_complete`). v25 ignores the fields; a run left in a v26-only status shows
+  as a plain step label in v25 and can still be resumed there (v25 auto-detects from the trackers).
+
+## Rollback (v20 stable → v21 work) — historical
 - **Git:** stable state tagged `v20-stable` (commit `e32669b`); v21 work on branch `v21-swe-pk`.
   Revert code: `git checkout v20-stable` (or `git checkout main`).
 - **Image:** the last-known-good image is tagged `mri:v20` (= `docker-mri:latest` @ `81f940ef45ea`).
@@ -132,7 +142,33 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
   new run was invisible and the selection request was discarded), and the run selector keeps its value
   under its own key instead of an `index` that the 3s auto-refresh kept resetting.
 
+### Stage 7: v26 — run scope switch + PAR batches (branch v26-par-batches)
+- [x] 7.0 Rollback net: git tag `v25-stable`, image `mri:v25-stable-rollback`, source tarball in `~/AI/MRI_backups/`
+- [x] 7.1 New Run: "Full run" / "Core base generation only" switch (default Full run; disabled for Core
+  Database uploads). Core-only runs end in `core_complete`; "Download PARs" continues straight to PARs.
+- [x] 7.2 Per-session PAR limit (default unlimited): session stops after N new **distinct** PAR PDFs
+  (SHA-256 content dedup — a PAR shared by several strengths counts once). `process_molecule_v10.js
+  --par-limit N` exits 4; orchestrator spreads the limit over retry rounds, runs BE extraction on what it
+  has, keeps `{molecule}/` + tracker and ends in `batch_complete`. A product cut off mid-way stays pending.
+- [x] 7.3 Resume: keeps the run's original config + `sessions` log; `resumed_from` carries the previous
+  step past the "starting" status; restores `{molecule}/` from `_per_procedure/` for pre-v26 runs.
+- [x] 7.4 Dashboard/History: new statuses, Results shown for partial runs, shared continue controls
+  (`src/mri_app/run_controls.py`); UI smoke test `tests/ui_test_v26.mjs`.
+- [x] 7.5 Build `mri:v26-par-batches`, test in throwaway containers, deploy live (2026-10-07).
+- [ ] 7.6 User acceptance: one real batched run on a large molecule (e.g. re-run Rivaroxaban in batches — 6.6).
+
 ## Test Results
+- 7.x v26 (2026-10-07, throwaway containers on gluetun, isolated volume — live data untouched):
+  Cabozantinib (5 products, mode full) limit 3 → exactly 3 distinct PDFs, DK/H/3422/002+003 identical PARs
+  flagged "not counted", DK/H/3456/001 left pending mid-product → `batch_complete`; resume limit 3 → 1 new,
+  `complete`, 10 PDFs total (= the original unlimited run). MelSE4 basic + core-only → `core_complete`
+  (4 products, no PAR stage); continue limit 2 → SWE PAR+sPAR then `batch_complete`; continue unlimited →
+  004/005 SWE duplicates not counted → `complete`. Pre-v26 renamed `_per_procedure` run resumed → folder
+  restored, `complete`. Bug found + fixed during testing: runner's "starting" status hid `core_complete`
+  from the orchestrator (re-ran core stage) → `resumed_from`. UI (Playwright, 31 checks, 0 exceptions):
+  switch default Full run, limit toggle off/unlimited by default, number input 10 when on, core hides limit,
+  full-mode disables switch, Download PARs / Download next batch buttons, limit prefilled from last session,
+  History labels. LIVE after deploy: New Run / History / Home render on real data, 0 exceptions, healthy.
 - 6.7 LIVE (2026-10-05, `mri:v25-ui-fixes`): New Run page rendered headlessly (Playwright against a
   throwaway container on the patched source, then again against the deployed container) — **0 elements
   carry `.mode-panel`** and the DOM reads "New Run | Source mode | Select how to start the pipeline |
@@ -173,6 +209,21 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 - 5.6: aggregation tested on synthetic (dedup, GMR/CI normalisation, pooled CV) + real ketoprofen (empty-CV → 0 studies, no crash).
 
 ## LOG
+
+### 2026-10-07
+{vmi1967850; Claude Opus 5.5; 2026-10-07_1130} v26 — run scope switch + per-session PAR batch limit (deployed)
+- User request: (1) New Run switch "Full run" / "Core base generation only" (default Full run); (2) user-chosen
+  limit on successfully downloaded independent PAR PDFs per session (default unlimited), resumable for the
+  next batch; (3) backup current version for easy rollback.
+- Backup: git tag `v25-stable` (7e4c549), image `mri:v25-stable-rollback` (29de6bc), source tarball
+  `~/AI/MRI_backups/mri_v25-stable_7e4c549_20261007.tar.gz`. See "Rollback (v26 → v25)".
+- "Independent" implemented as distinct by content (SHA-256): the portal serves the same PAR for every
+  strength of a procedure (often under different filenames, e.g. `_DC.pdf` vs `_DC_2.pdf`), so counting
+  files would burn the budget on duplicates. Duplicates are still saved per product, just not counted.
+- Limit is exact: checked before every PDF; a product interrupted mid-way stays `pending` and is redone next
+  session (already-known PDFs are not recounted).
+- Commit 5acb75f on branch v26-par-batches. Image `mri:v26-par-batches` (130f54e1e896) deployed live via
+  docker run (docker-mri:latest retagged in step). Not pushed yet.
 
 ### 2026-10-05
 {vmi1967850; Claude Opus 5; 2026-10-05_1200} UI fixes (v25) — empty mode panel removed; Start Pipeline keeps its run

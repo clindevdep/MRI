@@ -155,6 +155,9 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 - [x] 7.4 Dashboard/History: new statuses, Results shown for partial runs, shared continue controls
   (`src/mri_app/run_controls.py`); UI smoke test `tests/ui_test_v26.mjs`.
 - [x] 7.5 Build `mri:v26-par-batches`, test in throwaway containers, deploy live (2026-10-07).
+- [x] 7.5b UI feedback (2026-10-07): scope is an on/off switch (`st.toggle`, off = Full run) instead of the
+  tab-like segmented control; PAR limit is a single number field, default 0 = unlimited (no toggle).
+  Image `mri:v26-par-batches` = 40e96137cdc5, redeployed; UI test 18/18, live check OK.
 - [ ] 7.6 User acceptance: one real batched run on a large molecule (e.g. re-run Rivaroxaban in batches — 6.6).
 
 ## Test Results
@@ -224,6 +227,8 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
   session (already-known PDFs are not recounted).
 - Commit 5acb75f on branch v26-par-batches. Image `mri:v26-par-batches` (130f54e1e896) deployed live via
   docker run (docker-mri:latest retagged in step). Not pushed yet.
+- Follow-up (user feedback): switch instead of segmented control; limit = number field, 0 = unlimited.
+  Commit d700dbb, rebuilt 40e96137cdc5, redeployed, live-verified (switch present, limit 0, 0 exceptions).
 
 ### 2026-10-05
 {vmi1967850; Claude Opus 5; 2026-10-05_1200} UI fixes (v25) — empty mode panel removed; Start Pipeline keeps its run

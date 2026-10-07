@@ -214,6 +214,16 @@ Port the MRI_Jan2026 CLI tool (EU MRI Portal PAR downloader + bioequivalence ext
 ## LOG
 
 ### 2026-10-07
+{vmi1967850; Claude Opus 5.5; 2026-10-07_1605} context purge
+- Event: context purge after v26 delivery.
+- Completed: v26 scope switch ("Core base generation only", off = Full run) + per-session PAR limit
+  (number field, 0 = unlimited; distinct PDFs by SHA-256; resumable batches) built, tested, deployed live
+  (`mri:v26-par-batches` 40e96137cdc5) incl. UI feedback round; v25 rollback net (tag v25-stable, image
+  mri:v25-stable-rollback, source tarball). Branch v26-par-batches + tag v25-stable pushed.
+- Remaining: user screenshot feedback on v26 UI (~/AI/Screenshots); 7.6 large batched acceptance run
+  (Rivaroxaban, also 6.6); optional merge to main / release tag; optional VPN rotation (Stage 4).
+- Memory note: /home/clindevdep/.claude/projects/-home-clindevdep-AI-MRI_v22_portal_resilience_20260804/memory/purge_resume_20261007.md
+
 {vmi1967850; Claude Opus 5.5; 2026-10-07_1130} v26 — run scope switch + per-session PAR batch limit (deployed)
 - User request: (1) New Run switch "Full run" / "Core base generation only" (default Full run); (2) user-chosen
   limit on successfully downloaded independent PAR PDFs per session (default unlimited), resumable for the
